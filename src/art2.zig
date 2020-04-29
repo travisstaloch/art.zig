@@ -5,89 +5,89 @@ fn log(comptime fmt: []const u8, vals: var) void {
     if (ShowDebugLog) std.debug.warn(fmt, vals);
 }
 
-pub fn art_tree(comptime T: type) type {
+pub fn ArtTree(comptime T: type) type {
     return struct {
-        root: ?*art_node,
+        root: ?*Node,
         size: usize,
         allr: *std.mem.Allocator,
 
         const MAX_PREFIX_LEN = 10;
-        const art_node_t = struct {
-            num_children: u8,
-            partial_len: usize,
+        const BaseNode = struct {
+            numChildren: u8,
+            partialLen: usize,
             partial: [MAX_PREFIX_LEN]u8,
         };
 
-        pub fn art_node_sized(comptime keysLen: usize, comptime childrenLen: usize) type {
+        pub fn NodeSized(comptime keysLen: usize, comptime childrenLen: usize) type {
             return struct {
-                n: art_node_t,
+                n: BaseNode,
                 keys: [keysLen]u8,
-                children: [childrenLen]*art_node,
+                children: [childrenLen]*Node,
                 const Self = @This();
                 pub fn init() Self {}
             };
         }
 
-        pub const art_node4 = art_node_sized(4, 4);
-        pub const art_node16 = art_node_sized(16, 16);
-        pub const art_node48 = art_node_sized(256, 48);
-        pub const art_node256 = art_node_sized(0, 256);
+        pub const Node4 = NodeSized(4, 4);
+        pub const Node16 = NodeSized(16, 16);
+        pub const Node48 = NodeSized(256, 48);
+        pub const Node256 = NodeSized(0, 256);
 
-        const art_leaf = struct {
+        const Leaf = struct {
             value: ?T,
             key: []u8,
         };
 
-        const art_node = union(enum) {
-            leaf: art_leaf,
-            node4: art_node4,
-            node16: art_node16,
-            node48: art_node48,
-            node256: art_node256,
-            pub fn node(self: *art_node) *art_node_t {
+        const Node = union(enum) {
+            Leaf: Leaf,
+            Node4: Node4,
+            Node16: Node16,
+            Node48: Node48,
+            Node256: Node256,
+            pub fn node(self: *Node) *BaseNode {
                 return switch (self.*) {
-                    .node4 => &self.node4.n,
-                    .node16 => &self.node16.n,
-                    .node48 => &self.node48.n,
-                    .node256 => &self.node256.n,
-                    .leaf => unreachable,
+                    .Node4 => &self.Node4.n,
+                    .Node16 => &self.Node16.n,
+                    .Node48 => &self.Node48.n,
+                    .Node256 => &self.Node256.n,
+                    .Leaf => unreachable,
                 };
             }
         };
 
-        const Tree = art_tree(T);
+        const Tree = ArtTree(T);
 
         pub fn init(allr: *std.mem.Allocator) !Tree {
             return Tree{ .root = null, .size = 0, .allr = allr };
         }
-        const Result = union(enum) { New, Old: *art_node };
+        const Result = union(enum) { New, Old: *Node };
         pub fn deinit(t: *Tree) void {}
-        fn make_leaf(key: []const u8, value: T) !*art_node {
-            // var l = try a.create(art_leaf);
-            var n = try a.create(art_node);
-            n.* = .{ .leaf = .{ .value = value, .key = try a.alloc(u8, key.len) } };
-            std.mem.copy(u8, n.leaf.key, key);
+        fn makeLeaf(key: []const u8, value: T) !*Node {
+            // var l = try a.create(Leaf);
+            var n = try a.create(Node);
+            n.* = .{ .Leaf = .{ .value = value, .key = try a.alloc(u8, key.len) } };
+            std.mem.copy(u8, n.Leaf.key, key);
             return n;
         }
         fn leaf_matches() void {}
         pub fn insert(t: *Tree, key: []const u8, value: T) !Result {
-            const res = try t.recursive_insert(t.root, &t.root, key, value, 0);
+            const res = try t.recursiveInsert(t.root, &t.root, key, value, 0);
             if (res == .New) t.size += 1;
             return res;
         }
-        fn longest_common_prefix(l: art_leaf, l2: art_leaf, depth: usize) usize {
+        fn longestCommonPrefix(l: Leaf, l2: Leaf, depth: usize) usize {
             const max_cmp = std.math.min(l.key.len, l2.key.len) - depth;
             var common: usize = 0;
             while (common < max_cmp and l.key[common] == l2.key[common]) : (common += 1) {}
             return common;
         }
-        fn prefix_mismatch(_n: *art_node, key: []const u8, depth: usize) usize {
+        fn prefixMismatch(_n: *Node, key: []const u8, depth: usize) usize {
             const n = _n.node();
-            var max_cmp = std.math.min(std.math.min(MAX_PREFIX_LEN, n.partial_len), key.len - depth);
+            var max_cmp = std.math.min(std.math.min(MAX_PREFIX_LEN, n.partialLen), key.len - depth);
             var idx: usize = 0;
             while (idx < max_cmp) : (idx += 1) if (n.partial[idx] != key[depth + idx])
                 return idx;
-            if (n.partial_len > MAX_PREFIX_LEN) {
+            if (n.partialLen > MAX_PREFIX_LEN) {
                 const l = minimum(_n);
                 max_cmp = std.math.min(l.?.key.len, key.len) - depth;
                 while (idx < max_cmp) : (idx += 1) if (l.?.key[idx + depth] != key[depth + idx])
@@ -95,252 +95,252 @@ pub fn art_tree(comptime T: type) type {
             }
             return idx;
         }
-        fn empty_node4() art_node {
-            return .{ .node4 = .{ .n = .{ .num_children = 0, .partial_len = 0, .partial = undefined }, .keys = undefined, .children = undefined } };
+        fn emptyNode4() Node {
+            return .{ .Node4 = .{ .n = .{ .numChildren = 0, .partialLen = 0, .partial = undefined }, .keys = undefined, .children = undefined } };
         }
-        // Find the minimum leaf under a node
-        fn minimum(_n: ?*art_node) ?*art_leaf {
+        // Find the minimum Leaf under a node
+        fn minimum(_n: ?*Node) ?*Leaf {
             if (_n == null) return null;
             var n = _n orelse unreachable;
 
             var idx: usize = 0;
             switch (n.*) {
-                .leaf => return &n.leaf,
-                .node4 => return minimum(n.node4.children[0]),
-                .node16 => return minimum(n.node16.children[0]),
-                .node48 => {
-                    while (n.node48.keys[idx] == 0) : (idx += 1)
-                        return minimum(n.node48.children[n.node48.keys[idx] - 1]);
+                .Leaf => return &n.Leaf,
+                .Node4 => return minimum(n.Node4.children[0]),
+                .Node16 => return minimum(n.Node16.children[0]),
+                .Node48 => {
+                    while (n.Node48.keys[idx] == 0) : (idx += 1)
+                        return minimum(n.Node48.children[n.Node48.keys[idx] - 1]);
                 },
-                .node256 => {
-                    while (!has_child_idx(n, idx)) : (idx += 1)
-                        return minimum(n.node256.children[idx]);
+                .Node256 => {
+                    while (!hasChildAt(n, idx)) : (idx += 1)
+                        return minimum(n.Node256.children[idx]);
                 },
                 else => unreachable,
             }
             unreachable;
         }
-        fn has_child_idx(n: *art_node, i: usize) bool {
+        fn hasChildAt(n: *Node, i: usize) bool {
             return switch (n.*) {
-                .node4 => @ptrToInt(n.node4.children[i]) != 0,
-                .node16 => @ptrToInt(n.node16.children[i]) != 0,
-                .node48 => @ptrToInt(n.node48.children[i]) != 0,
-                .node256 => @ptrToInt(n.node256.children[i]) != 0,
+                .Node4 => @ptrToInt(n.Node4.children[i]) != 0,
+                .Node16 => @ptrToInt(n.Node16.children[i]) != 0,
+                .Node48 => @ptrToInt(n.Node48.children[i]) != 0,
+                .Node256 => @ptrToInt(n.Node256.children[i]) != 0,
                 else => false,
             };
         }
         const InsertError = error{OutOfMemory};
-        pub fn recursive_insert(t: *Tree, _n: ?*art_node, ref: *?*art_node, key: []const u8, value: T, _depth: usize) InsertError!Result {
+        pub fn recursiveInsert(t: *Tree, _n: ?*Node, ref: *?*Node, key: []const u8, value: T, _depth: usize) InsertError!Result {
             if (_n == null) {
-                ref.* = try make_leaf(key, value);
+                ref.* = try makeLeaf(key, value);
                 return .New;
             }
             var n = _n orelse unreachable;
             var depth = _depth;
-            if (n.* == .leaf) {
-                var l = n.leaf;
+            if (n.* == .Leaf) {
+                var l = n.Leaf;
                 if (std.mem.eql(u8, l.key, key)) return Result{ .Old = n };
 
-                var new_node = try t.allr.create(art_node);
-                new_node.* = empty_node4();
-                var l2 = try make_leaf(key, value);
-                const longest_prefix = longest_common_prefix(l, l2.leaf, depth);
-                new_node.node4.n.partial_len = longest_prefix;
+                var newNode = try t.allr.create(Node);
+                newNode.* = emptyNode4();
+                var l2 = try makeLeaf(key, value);
+                const longest_prefix = longestCommonPrefix(l, l2.Leaf, depth);
+                newNode.Node4.n.partialLen = longest_prefix;
                 var key_copy = key;
                 key_copy.ptr += depth;
                 key_copy.len -= std.math.min(MAX_PREFIX_LEN, longest_prefix);
-                std.mem.copy(u8, &new_node.node4.n.partial, key_copy);
-                ref.* = new_node;
-                try t.add_child4(new_node, ref, l.key[depth + longest_prefix], n);
-                try t.add_child4(new_node, ref, l2.leaf.key[depth + longest_prefix], l2);
+                std.mem.copy(u8, &newNode.Node4.n.partial, key_copy);
+                ref.* = newNode;
+                try t.addChild4(newNode, ref, l.key[depth + longest_prefix], n);
+                try t.addChild4(newNode, ref, l2.Leaf.key[depth + longest_prefix], l2);
                 return .New;
             }
 
             const anode = n.node();
 
-            if (anode.partial_len != 0) {
-                const prefix_diff = prefix_mismatch(n, key, depth);
-                if (prefix_diff >= anode.partial_len) {
-                    depth += anode.partial_len;
+            if (anode.partialLen != 0) {
+                const prefix_diff = prefixMismatch(n, key, depth);
+                if (prefix_diff >= anode.partialLen) {
+                    depth += anode.partialLen;
                     return t.recurse_search(n, ref, key, value, depth);
                 }
 
-                var new_node = try t.allr.create(art_node);
-                new_node.* = empty_node4();
-                ref.* = new_node;
-                anode.partial_len = prefix_diff;
-                std.mem.copy(u8, &new_node.node4.n.partial, &anode.partial);
+                var newNode = try t.allr.create(Node);
+                newNode.* = emptyNode4();
+                ref.* = newNode;
+                anode.partialLen = prefix_diff;
+                std.mem.copy(u8, &newNode.Node4.n.partial, &anode.partial);
 
-                if (anode.partial_len <= MAX_PREFIX_LEN) {
-                    try t.add_child4(new_node, ref, anode.partial[prefix_diff], n);
-                    anode.partial_len -= (prefix_diff + 1);
+                if (anode.partialLen <= MAX_PREFIX_LEN) {
+                    try t.addChild4(newNode, ref, anode.partial[prefix_diff], n);
+                    anode.partialLen -= (prefix_diff + 1);
                     std.mem.copy(u8, &anode.partial, anode.partial[prefix_diff + 1 ..]);
                 } else {
-                    anode.partial_len -= (prefix_diff + 1);
+                    anode.partialLen -= (prefix_diff + 1);
                     const l = minimum(n);
-                    try t.add_child4(new_node, ref, l.?.key[depth + prefix_diff], n);
+                    try t.addChild4(newNode, ref, l.?.key[depth + prefix_diff], n);
                     std.mem.copy(u8, &anode.partial, l.?.key[depth + prefix_diff + 1 ..]);
                 }
 
-                var l = try make_leaf(key, value);
-                try t.add_child4(new_node, ref, key[depth + prefix_diff], l);
+                var l = try makeLeaf(key, value);
+                try t.addChild4(newNode, ref, key[depth + prefix_diff], l);
                 return Result{ .New = {} };
             }
             // std.debug.warn("unreachable {} {} {}\n", .{ key, value, n });
             // unreachable;
             return t.recurse_search(n, ref, key, value, depth);
         }
-        fn recurse_search(t: *Tree, n: *art_node, ref: *?*art_node, key: []const u8, value: T, depth: usize) InsertError!Result {
-            const child = find_child(n, key[depth]);
-            if (child.* != null) return t.recursive_insert(child.*, child, key, value, depth);
+        fn recurse_search(t: *Tree, n: *Node, ref: *?*Node, key: []const u8, value: T, depth: usize) InsertError!Result {
+            const child = findChild(n, key[depth]);
+            if (child.* != null) return t.recursiveInsert(child.*, child, key, value, depth);
 
-            var l = try make_leaf(key, value);
+            var l = try makeLeaf(key, value);
             try t.add_child(n, ref, key[depth], l);
             return Result{ .New = {} };
         }
-        fn copy_header(dest: *art_node, src: *art_node) void {
-            dest.node().num_children = src.node().num_children;
-            dest.node().partial_len = src.node().partial_len;
+        fn copyHeader(dest: *Node, src: *Node) void {
+            dest.node().numChildren = src.node().numChildren;
+            dest.node().partialLen = src.node().partialLen;
             std.mem.copy(u8, &dest.node().partial, &src.node().partial);
         }
         // TODO: remove this helper for casting away constness
         fn castPtr(comptime P: type, p: var) P {
             return @intToPtr(P, @ptrToInt(p));
         }
-        fn add_child(t: *Tree, n: *art_node, ref: *?*art_node, c: u8, child: *art_node) InsertError!void {
+        fn add_child(t: *Tree, n: *Node, ref: *?*Node, c: u8, child: *Node) InsertError!void {
             return switch (n.*) {
-                .node4 => try t.add_child4(n, ref, c, child),
-                .node16 => try t.add_child16(n, ref, c, child),
-                .node48 => try t.add_child48(n, ref, c, child),
-                .node256 => try t.add_child256(n, ref, c, child),
+                .Node4 => try t.addChild4(n, ref, c, child),
+                .Node16 => try t.addChild16(n, ref, c, child),
+                .Node48 => try t.addChild48(n, ref, c, child),
+                .Node256 => try t.addChild256(n, ref, c, child),
                 else => unreachable,
             };
         }
-        fn find_child(n: *art_node, c: u8) *?*art_node {
+        fn findChild(n: *Node, c: u8) *?*Node {
             const anode = n.node();
             switch (n.*) {
-                .node4 => {
+                .Node4 => {
                     var i: usize = 0;
-                    while (i < anode.num_children) : (i += 1) if (n.node4.keys[i] == c)
-                        return &@as(?*art_node, n.node4.children[i]);
+                    while (i < anode.numChildren) : (i += 1) if (n.Node4.keys[i] == c)
+                        return &@as(?*Node, n.Node4.children[i]);
                 },
-                .node16 => {
+                .Node16 => {
                     // TODO: simd
                     var bitfield: usize = 0;
-                    for (n.node16.keys) |k, i| {
+                    for (n.Node16.keys) |k, i| {
                         if (k == c)
                             bitfield |= (@as(usize, 1) << @truncate(u6, i));
                     }
-                    const mask = (@as(usize, 1) << @truncate(u6, anode.num_children)) - 1;
+                    const mask = (@as(usize, 1) << @truncate(u6, anode.numChildren)) - 1;
                     bitfield &= mask;
                     // end TODO
-                    if (bitfield != 0) return &(@as(?*art_node, n.node16.children[@ctz(usize, bitfield)]));
+                    if (bitfield != 0) return &(@as(?*Node, n.Node16.children[@ctz(usize, bitfield)]));
                 },
-                .node48 => if (n.node48.keys[c] != 0) return &(@as(?*art_node, n.node48.children[n.node48.keys[c] - 1])),
-                .node256 => if (has_child_idx(n, c)) return &(@as(?*art_node, n.node256.children[c])),
+                .Node48 => if (n.Node48.keys[c] != 0) return &(@as(?*Node, n.Node48.children[n.Node48.keys[c] - 1])),
+                .Node256 => if (hasChildAt(n, c)) return &(@as(?*Node, n.Node256.children[c])),
                 else => unreachable,
             }
-            var x: ?*art_node = null;
-            return &@as(?*art_node, x);
+            var x: ?*Node = null;
+            return &@as(?*Node, x);
         }
-        fn add_child4(t: *Tree, n: *art_node, ref: *?*art_node, c: u8, child: *art_node) InsertError!void {
-            if (n.node4.n.num_children < 4) {
+        fn addChild4(t: *Tree, n: *Node, ref: *?*Node, c: u8, child: *Node) InsertError!void {
+            if (n.Node4.n.numChildren < 4) {
                 var idx: usize = 0;
-                while (idx < n.node4.n.num_children) : (idx += 1) if (c < n.node4.keys[idx])
+                while (idx < n.Node4.n.numChildren) : (idx += 1) if (c < n.Node4.keys[idx])
                     break;
-                std.debug.warn("idx {} {}\n", .{ idx, n.node4.keys });
-                std.debug.warn("n {}\n", .{n});
-                std.debug.warn("child {}\n", .{child});
-                std.mem.copy(u8, n.node4.keys[idx + 1 ..], n.node4.keys[idx .. n.node4.keys.len - 2]);
-                std.mem.copy(*art_node, n.node4.children[idx + 1 ..], n.node4.children[idx .. n.node4.children.len - 2]);
-                n.node4.keys[idx] = c;
-                n.node4.children[idx] = castPtr(*art_node, child);
-                n.node4.n.num_children += 1;
+                // std.debug.warn("idx {} {}\n", .{ idx, n.Node4.keys });
+                // std.debug.warn("n {}\n", .{n});
+                // std.debug.warn("child {}\n", .{child});
+                std.mem.copy(u8, n.Node4.keys[idx + 1 ..], n.Node4.keys[idx .. n.Node4.keys.len - 2]);
+                std.mem.copy(*Node, n.Node4.children[idx + 1 ..], n.Node4.children[idx .. n.Node4.children.len - 2]);
+                n.Node4.keys[idx] = c;
+                n.Node4.children[idx] = castPtr(*Node, child);
+                n.Node4.n.numChildren += 1;
             } else {
-                const new_node = try t.allr.create(art_node);
-                // TODO: support node16
-                new_node.* = .{ .node16 = undefined };
-                std.mem.copy(*art_node, &new_node.node16.children, &n.node4.children);
-                std.mem.copy(u8, &new_node.node16.keys, &n.node4.keys);
-                // new_node.* = .{ .node48 = undefined };
-                // std.mem.copy(*art_node, &new_node.node48.children, &n.node48.children);
-                // std.mem.copy(u8, &new_node.node48.keys, &n.node48.keys);
-                // const as_node = @ptrCast(*art_node, new_node);
+                const newNode = try t.allr.create(Node);
+                // TODO: support Node16
+                newNode.* = .{ .Node16 = undefined };
+                std.mem.copy(*Node, &newNode.Node16.children, &n.Node4.children);
+                std.mem.copy(u8, &newNode.Node16.keys, &n.Node4.keys);
+                // newNode.* = .{ .Node48 = undefined };
+                // std.mem.copy(*Node, &newNode.Node48.children, &n.Node48.children);
+                // std.mem.copy(u8, &newNode.Node48.keys, &n.Node48.keys);
+                // const as_node = @ptrCast(*Node, newNode);
                 // if ()
-                copy_header(new_node, n);
-                ref.* = new_node;
+                copyHeader(newNode, n);
+                ref.* = newNode;
                 t.allr.destroy(n);
                 // unreachable;
-                try t.add_child16(new_node, ref, c, child);
-                // try t.add_child48(new_node, ref, c, child);
+                try t.addChild16(newNode, ref, c, child);
+                // try t.addChild48(newNode, ref, c, child);
             }
         }
-        fn add_child16(t: *Tree, n: *art_node, ref: *?*art_node, c: u8, child: var) InsertError!void {
-            std.debug.warn("n {}\n", .{n});
-            if (n.node16.n.num_children < 16) {
+        fn addChild16(t: *Tree, n: *Node, ref: *?*Node, c: u8, child: var) InsertError!void {
+            // std.debug.warn("n {}\n", .{n});
+            if (n.Node16.n.numChildren < 16) {
                 // TODO: implement with simd
-                const mask = (@as(usize, 1) << @truncate(u6, n.node16.n.num_children)) - 1;
+                const mask = (@as(usize, 1) << @truncate(u6, n.Node16.n.numChildren)) - 1;
                 var bitfield: usize = 0;
-                for (n.node16.keys) |k, i|
+                for (n.Node16.keys) |k, i|
                     bitfield |= (@as(usize, 1) << @truncate(u6, i));
                 bitfield &= mask;
                 // end TODO
                 var idx: usize = 0;
                 if (bitfield != 0) {
                     idx = @ctz(usize, bitfield);
-                    std.mem.copy(u8, n.node16.keys[idx + 1 ..], n.node16.keys[idx..]);
-                    std.mem.copy(*art_node, n.node16.children[idx + 1 ..], n.node16.children[idx..]);
-                } else idx = n.node16.n.num_children;
+                    std.mem.copy(u8, n.Node16.keys[idx + 1 ..], n.Node16.keys[idx..]);
+                    std.mem.copy(*Node, n.Node16.children[idx + 1 ..], n.Node16.children[idx..]);
+                } else idx = n.Node16.n.numChildren;
 
-                n.node16.keys[idx] = c;
-                n.node16.children[idx] = castPtr(*art_node, child);
-                n.node16.n.num_children += 1;
+                n.Node16.keys[idx] = c;
+                n.Node16.children[idx] = castPtr(*Node, child);
+                n.Node16.n.numChildren += 1;
             } else {
                 unreachable;
             }
         }
-        fn add_child48(t: *Tree, n: *art_node, ref: *?*art_node, c: u8, child: var) InsertError!void {
+        fn addChild48(t: *Tree, n: *Node, ref: *?*Node, c: u8, child: var) InsertError!void {
             // if (n.)
         }
-        fn add_child256(t: *Tree, n: *art_node, ref: *?*art_node, c: u8, child: var) InsertError!void {
+        fn addChild256(t: *Tree, n: *Node, ref: *?*Node, c: u8, child: var) InsertError!void {
             // if (n.)
         }
         pub fn delete(t: *Tree, key: []const u8) Result {}
         const art_callback = fn (data: *c_void, key: []const u8, value: T, depth: usize) bool;
         pub fn search(t: *Tree, key: []const u8) Result {}
         pub fn iter(t: *Tree, comptime cb: art_callback, data: var) bool {
-            return recursive_iter(t.root, cb, data, 0);
+            return recursiveIter(t.root, cb, data, 0);
         }
-        pub fn recursive_iter(_n: ?*art_node, comptime cb: art_callback, data: *c_void, depth: usize) bool {
+        pub fn recursiveIter(_n: ?*Node, comptime cb: art_callback, data: *c_void, depth: usize) bool {
             if (_n == null) return false;
             const n = _n orelse unreachable;
-            if (n.* == .leaf) return cb(data, n.leaf.key, n.leaf.value.?, depth);
+            if (n.* == .Leaf) return cb(data, n.Leaf.key, n.Leaf.value.?, depth);
             switch (n.*) {
-                .node4 => {
+                .Node4 => {
                     var i: usize = 0;
-                    while (i < n.node4.n.num_children) : (i += 1) if (recursive_iter(n.node4.children[i], cb, data, depth + 1))
+                    while (i < n.Node4.n.numChildren) : (i += 1) if (recursiveIter(n.Node4.children[i], cb, data, depth + 1))
                         return true;
                 },
-                .node16 => {
+                .Node16 => {
                     var i: usize = 0;
-                    while (i < n.node16.n.num_children) : (i += 1) if (recursive_iter(n.node16.children[i], cb, data, depth + 1))
+                    while (i < n.Node16.n.numChildren) : (i += 1) if (recursiveIter(n.Node16.children[i], cb, data, depth + 1))
                         return true;
                 },
-                .node48 => {
+                .Node48 => {
                     var i: usize = 0;
                     while (i < 256) : (i += 1) {
-                        const idx = n.node48.keys[i];
+                        const idx = n.Node48.keys[i];
                         if (idx == 0) continue;
-                        if (recursive_iter(n.node48.children[idx - 1], cb, data, depth + 1))
+                        if (recursiveIter(n.Node48.children[idx - 1], cb, data, depth + 1))
                             return true;
                     }
                 },
-                .node256 => {
+                .Node256 => {
                     var i: usize = 0;
                     while (i < 256) : (i += 1) {
                         // @panic("unimplemented");
-                        if (!has_child_idx(n, i)) continue;
-                        if (recursive_iter(n.node256.children[i], cb, data, depth + 1))
+                        if (!hasChildAt(n, i)) continue;
+                        if (recursiveIter(n.Node256.children[i], cb, data, depth + 1))
                             return true;
                     }
                     return false;
@@ -349,7 +349,7 @@ pub fn art_tree(comptime T: type) type {
             }
             return false;
         }
-        pub fn iter_prefix(t: *Tree, prefix: []const u8, comptime cb: art_callback, data: var) Result {}
+        pub fn iterPrefix(t: *Tree, prefix: []const u8, comptime cb: art_callback, data: var) Result {}
         const max_spaces = 256;
         const spaces = [1]u8{' '} ** max_spaces;
         pub fn print(t: *Tree) void {
@@ -374,7 +374,7 @@ const use_test_allr = true;
 const a = if (use_test_allr) testing.allocator else std.heap.allocator;
 
 test "test_art_insert" {
-    var t = try art_tree(usize).init(a);
+    var t = try ArtTree(usize).init(a);
     const f = try std.fs.cwd().openFile("./testdata/words1.txt", .{ .read = true });
     defer f.close();
 
