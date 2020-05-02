@@ -208,44 +208,44 @@ pub fn ArtTree(comptime T: type) type {
                 const c2 = if (depth + longestPrefix < l2.Leaf.key.len) l2.Leaf.key[depth + longestPrefix] else 0;
                 newNode.Node4.n.partialLen = longestPrefix;
                 std.mem.copy(u8, &newNode.Node4.n.partial, key[depth..][0..std.math.min(MaxPartialLen, longestPrefix)]);
-                log("longestPrefix {} depth {} l.key {}-{} '{c}' l2.key {}-{} '{c} ref {*} n {*}'\n", .{ longestPrefix, depth, l.key, l.key.len, c1, l2.Leaf.key, l2.Leaf.key.len, c2, ref.*, n });
+                log("longestPrefix {} depth {} l.key {}-{} '{c}' l2.key {}-{} '{c} ref {*} '\n", .{ longestPrefix, depth, l.key, l.key.len, c1, l2.Leaf.key, l2.Leaf.key.len, c2, ref.* });
                 // Add the leaves to the new node4
                 // log("newNode {}\n", .{newNode});
                 // try t.addChild4(newNode, ref, if (depth + longestPrefix < l.key.len) l.key[depth + longestPrefix] else 0, n);
                 // try t.addChild4(newNode, ref, if (depth + longestPrefix < l2.Leaf.key.len) l2.Leaf.key[depth + longestPrefix] else 0, l2);
+                ref.* = newNode;
                 try t.addChild4(newNode, ref, c1, n);
                 try t.addChild4(newNode, ref, c2, l2);
-                ref.* = newNode;
-                log("newNode {} ref {*} n {*}\n", .{ newNode, ref.*, n });
+                log("newNode {} ref {*} \n", .{ newNode, ref.* });
                 return .New;
             }
 
-            const base = n.baseNode();
-            log("partialLen {}\n", .{base.partialLen});
+            const baseNode = n.baseNode();
+            log("partialLen {}\n", .{baseNode.partialLen});
 
-            if (base.partialLen != 0) {
+            if (baseNode.partialLen != 0) {
                 const prefixDiff = prefixMismatch(n, key, depth);
                 log("prefixDiff {}\n", .{prefixDiff});
-                if (prefixDiff >= base.partialLen) {
-                    depth += base.partialLen;
+                if (prefixDiff >= baseNode.partialLen) {
+                    depth += baseNode.partialLen;
                     return t.recurseInsertSearch(n, ref, key, value, depth);
                 }
 
                 // var newNode = try t.allr.create(Node);
                 var newNode = try t.allocNode(.Node4);
                 ref.* = newNode;
-                base.partialLen = prefixDiff;
-                std.mem.copy(u8, &newNode.Node4.n.partial, &base.partial);
+                baseNode.partialLen = prefixDiff;
+                std.mem.copy(u8, &newNode.Node4.n.partial, &baseNode.partial);
 
-                if (base.partialLen <= MaxPartialLen) {
-                    try t.addChild4(newNode, ref, base.partial[prefixDiff], n);
-                    base.partialLen -= (prefixDiff + 1);
-                    std.mem.copyBackwards(u8, &base.partial, base.partial[prefixDiff + 1 ..]);
+                if (baseNode.partialLen <= MaxPartialLen) {
+                    try t.addChild4(newNode, ref, baseNode.partial[prefixDiff], n);
+                    baseNode.partialLen -= (prefixDiff + 1);
+                    std.mem.copyBackwards(u8, &baseNode.partial, baseNode.partial[prefixDiff + 1 ..]);
                 } else {
-                    base.partialLen -= (prefixDiff + 1);
+                    baseNode.partialLen -= (prefixDiff + 1);
                     const l = minimum(n);
                     try t.addChild4(newNode, ref, l.?.key[depth + prefixDiff], n);
-                    std.mem.copy(u8, &base.partial, l.?.key[depth + prefixDiff + 1 ..]);
+                    std.mem.copy(u8, &baseNode.partial, l.?.key[depth + prefixDiff + 1 ..]);
                 }
 
                 var l = try makeLeaf(key, value);
@@ -266,10 +266,10 @@ pub fn ArtTree(comptime T: type) type {
             try t.addChild(n, ref, key[depth], l);
             return Result{ .New = {} };
         }
-        fn copyHeader(dest: *Node, src: *Node) void {
-            dest.baseNode().numChildren = src.baseNode().numChildren;
-            dest.baseNode().partialLen = src.baseNode().partialLen;
-            std.mem.copy(u8, &dest.baseNode().partial, &src.baseNode().partial);
+        fn copyHeader(dest: *BaseNode, src: *BaseNode) void {
+            dest.numChildren = src.numChildren;
+            dest.partialLen = src.partialLen;
+            std.mem.copy(u8, &dest.partial, &src.partial);
         }
         // TODO: remove this helper for casting away constness
         // fn castPtr(comptime P: type, p: var) P {
@@ -314,21 +314,15 @@ pub fn ArtTree(comptime T: type) type {
             log("addChild4 {c} numChildren {}\n", .{ c, n.Node4.n.numChildren });
             if (n.Node4.n.numChildren < 4) {
                 var idx: usize = 0;
-                while (idx < n.Node4.n.numChildren) : (idx += 1) if (c < n.Node4.keys[idx])
-                    break;
-                log("idx {} {} keysLen {}\n", .{ idx, n.Node4.keys, n.Node4.keys[idx..][0 .. n.Node4.n.numChildren - idx].len });
+                while (idx < n.Node4.n.numChildren and c < n.Node4.keys[idx]) : (idx += 1) {}
+
+                const shiftLen = n.Node4.n.numChildren - idx;
+                log("idx {} keys {} shiftLen {}\n", .{ idx, n.Node4.keys, shiftLen });
                 // log("n {}\n", .{n});
                 // log("child {}\n", .{child});
-                std.mem.copyBackwards(
-                    u8,
-                    n.Node4.keys[idx + 1 ..],
-                    n.Node4.keys[idx..][0 .. n.Node4.n.numChildren - idx],
-                );
-                std.mem.copyBackwards(
-                    *Node,
-                    n.Node4.children[idx + 1 ..],
-                    n.Node4.children[idx..][0 .. n.Node4.n.numChildren - idx],
-                );
+                // shift forward to make room
+                std.mem.copyBackwards(u8, n.Node4.keys[idx + 1 ..], n.Node4.keys[idx..][0..shiftLen]);
+                std.mem.copyBackwards(*Node, n.Node4.children[idx + 1 ..], n.Node4.children[idx..][0..shiftLen]);
                 n.Node4.keys[idx] = c;
                 n.Node4.children[idx] = child;
                 n.Node4.n.numChildren += 1;
@@ -337,7 +331,7 @@ pub fn ArtTree(comptime T: type) type {
                 var newNode = try t.allocNode(.Node16);
                 std.mem.copy(*Node, &newNode.Node16.children, &n.Node4.children);
                 std.mem.copy(u8, &newNode.Node16.keys, &n.Node4.keys);
-                copyHeader(newNode, n);
+                copyHeader(newNode.baseNode(), n.baseNode());
                 ref.* = newNode;
                 t.allr.destroy(n);
                 try t.addChild16(newNode, ref, c, child);
