@@ -3,7 +3,7 @@ const math = std.math;
 const mem = std.mem;
 
 // const ShowDebugLog = true;
-const LogLevel = enum { Info, Verbose, Warning, Error, None };
+const LogLevel = enum { Verbose, Info, Warning, Error, None };
 pub var logLevel = LogLevel.None;
 pub fn log(level: LogLevel, comptime fmt: []const u8, vals: var) void {
     const s = std.io.getStdOut().outStream();
@@ -102,11 +102,8 @@ pub fn ArtTree(comptime T: type) type {
         fn allocNode(t: *Tree, comptime Tag: @TagType(Node)) !*Node {
             var node = try t.allr.create(Node);
             const tagName = @tagName(Tag);
-            // node.* = @unionInit(Node, tagName, .{ .n = .{ .numChildren = 0, .partialLen = 0 }, .children = undefined });
             node.* = @unionInit(Node, tagName, .{ .n = .{ .numChildren = 0, .partialLen = 0 } });
             var tagField = @field(node, tagName);
-            // mem.secureZero(*Node, &tagField.children);
-            // @memset(@ptrCast([*]u8, &tagField.children), 0, @sizeOf(*Node) * tagField.children.len);
             return node;
         }
         pub fn deinit(t: *Tree) void {
@@ -154,38 +151,46 @@ pub fn ArtTree(comptime T: type) type {
             t.allr.destroy(n);
         }
 
-        fn makeLeaf(key: []const u8, value: T) !*Node {
+        fn makeLeaf(key: []const u8, keyLen: usize, value: T) !*Node {
+            // log(.Verbose, "makeLeaf key {} keyLen {}\n", .{ key, keyLen });
             var n = try a.create(Node);
-            n.* = .{ .Leaf = .{ .value = value, .key = try a.alloc(u8, key.len) } };
-            mem.copy(u8, n.Leaf.key, key);
+            n.* = .{ .Leaf = .{ .value = value, .key = try a.alloc(u8, keyLen) } };
+            mem.copy(u8, n.Leaf.key, key[0..keyLen]);
             return n;
         }
         pub fn insert(t: *Tree, key: []const u8, value: T) !Result {
             std.debug.assert(key[key.len - 1] == 0);
-            const res = try t.recursiveInsert(t.root, &t.root, key, value, 0);
+            const res = try t.recursiveInsert(t.root, &t.root, key, key.len - 1, value, 0);
             if (res == .Missing) t.size += 1;
             return res;
         }
         fn longestCommonPrefix(l: Leaf, l2: Leaf, depth: usize) usize {
-            var max_cmp = math.min(l.key.len, l2.key.len);
-            max_cmp = if (max_cmp > depth) max_cmp - depth else 0;
-            var common: usize = 0;
-            while (common < max_cmp) : (common += 1) if (l.key[depth + common] != l2.key[depth + common])
-                return common;
-            return common;
+            var maxCmp = math.min(l.key.len, l2.key.len) - depth;
+            // maxCmp = if (maxCmp > depth) maxCmp - depth else 0;
+            var idx: usize = 0;
+            while (idx < maxCmp) : (idx += 1) {
+                if (l.key[depth + idx] != l2.key[depth + idx])
+                    return idx;
+            }
+            return idx;
         }
         /// Calculates the index at which the prefixes mismatch
-        fn prefixMismatch(n: *Node, key: []const u8, depth: usize) usize {
-            const base = n.baseNode();
-            var max_cmp = math.min(math.min(MaxPartialLen, base.partialLen), key.len - depth);
+        fn prefixMismatch(n: *Node, key: []const u8, keyLen: usize, depth: usize) usize {
+            const baseNode = n.baseNode();
+            var maxCmp = math.min(math.min(MaxPartialLen, baseNode.partialLen), keyLen - depth);
+            // log(.Verbose, "prefixMismatch maxCmp {}\n", .{maxCmp});
             var idx: usize = 0;
-            while (idx < max_cmp) : (idx += 1) if (base.partial[idx] != key[depth + idx])
-                return idx;
-            if (base.partialLen > MaxPartialLen) {
-                const l = minimum(n);
-                max_cmp = math.min(l.?.key.len, key.len) - depth;
-                while (idx < max_cmp) : (idx += 1) if (l.?.key[idx + depth] != key[depth + idx])
+            while (idx < maxCmp) : (idx += 1) {
+                if (baseNode.partial[idx] != key[depth + idx])
                     return idx;
+            }
+            if (baseNode.partialLen > MaxPartialLen) {
+                const l = minimum(n);
+                maxCmp = math.min(l.?.key.len, keyLen) - depth;
+                while (idx < maxCmp) : (idx += 1) {
+                    if (l.?.key[idx + depth] != key[depth + idx])
+                        return idx;
+                }
             }
             return idx;
         }
@@ -195,23 +200,65 @@ pub fn ArtTree(comptime T: type) type {
         // Find the minimum Leaf under a node
         fn minimum(n: *Node) ?*Leaf {
             log(.Verbose, "minimum {}\n", .{n});
-            var idx: usize = 0;
-            switch (n.*) {
-                .Leaf => return &n.Leaf,
-                .Node4 => return minimum(n.Node4.children[0]),
-                .Node16 => return minimum(n.Node16.children[0]),
-                .Node48 => {
+            return switch (n.*) {
+                .Leaf => &n.Leaf,
+                .Node4 => minimum(n.Node4.children[0]),
+                .Node16 => minimum(n.Node16.children[0]),
+                .Node48 => blk: {
+                    var idx: usize = 0;
                     while (n.Node48.keys[idx] == 0) : (idx += 1) {}
-                    return minimum(n.Node48.children[n.Node48.keys[idx] - 1]);
+                    break :blk minimum(n.Node48.children[n.Node48.keys[idx] - 1]);
                 },
-                .Node256 => {
+                .Node256 => blk: {
+                    var idx: usize = 0;
                     while (!hasChildAt(n, .Node256, idx)) : (idx += 1) {}
-                    return minimum(n.Node256.children[idx]);
+                    break :blk minimum(n.Node256.children[idx]);
                 },
-                .Empty => return null,
-            }
-            unreachable;
+                .Empty => null,
+            };
         }
+        pub fn max(t: *Tree) ?*Leaf {
+            return maximum(t.root);
+        }
+        pub fn maximum(n: *Node) ?*Leaf {
+            // Handle base cases
+            return switch (n.*) {
+                .Leaf => &n.Leaf,
+                .Empty => null,
+                .Node4 => maximum(n.Node4.children[n.Node4.n.numChildren - 1]),
+                .Node16 => maximum(n.Node16.children[n.Node16.n.numChildren - 1]),
+                .Node48 => blk: {
+                    var idx: u8 = 255;
+                    while (n.Node48.keys[idx] == 0) : (idx -= 1) {}
+                    break :blk maximum(n.Node48.children[n.Node48.keys[idx] - 1]);
+                },
+                .Node256 => blk: {
+                    var idx: u8 = 255;
+                    while (!hasChildAt(n, .Node256, idx)) : (idx -= 1) {}
+                    break :blk maximum(n.Node256.children[idx]);
+                },
+            };
+
+            //   case NODE4:
+            //     return maximum(((const art_node4 *)n)->children[n->num_children - 1]);
+            //   case NODE16:
+            //     return maximum(((const art_node16 *)n)->children[n->num_children - 1]);
+            //   case NODE48:
+            //     idx = 255;
+            //     while (!((const art_node48 *)n)->keys[idx])
+            //       idx--;
+            //     idx = ((const art_node48 *)n)->keys[idx] - 1;
+            //     return maximum(((const art_node48 *)n)->children[idx]);
+            //   case NODE256:
+            //     idx = 255;
+            //     while (!((const art_node256 *)n)->children[idx])
+            //       idx--;
+            //     return maximum(((const art_node256 *)n)->children[idx]);
+            //   default:
+            //     abort();
+            //   }
+        }
+
         // TODO remove as this seems to only be used for Node256
         fn hasChildAt(n: *Node, comptime Tag: @TagType(Node), i: usize) bool {
             // log(.Warning, "hasChildAt {} {} {x}\n", .{ i, n, @ptrToInt(n.Node256.children[i]) });
@@ -230,9 +277,9 @@ pub fn ArtTree(comptime T: type) type {
         }
         const Result = union(enum) { Missing, Found: *Node };
         const InsertError = error{OutOfMemory};
-        pub fn recursiveInsert(t: *Tree, n: *Node, ref: **Node, key: []const u8, value: T, _depth: usize) InsertError!Result {
+        pub fn recursiveInsert(t: *Tree, n: *Node, ref: **Node, key: []const u8, keyLen: usize, value: T, _depth: usize) InsertError!Result {
             if (n == &emptyNode) {
-                ref.* = try makeLeaf(key, value);
+                ref.* = try makeLeaf(key, keyLen, value);
                 return .Missing;
             }
             var depth = _depth;
@@ -240,82 +287,80 @@ pub fn ArtTree(comptime T: type) type {
             if (n.* == .Leaf) {
                 var l = n.Leaf;
                 // Check if we are updating an existing value
-                // if (mem.eql(u8, l.key, key)) {
-                if (leafMatches(l, key)) {
+                if (leafMatches(l, key, keyLen)) {
                     l.value = value;
                     return Result{ .Found = n };
                 }
                 // New value, we must split the leaf into a node4
                 var newNode = try t.allocNode(.Node4);
                 // log(.Verbose, "allocNode sizeOf Node {}\n", .{@sizeOf(Node)});
-                var l2 = try makeLeaf(key, value);
+                var l2 = try makeLeaf(key, keyLen, value);
                 const longestPrefix = longestCommonPrefix(l, l2.Leaf, depth);
-                // const c1 = if (depth + longestPrefix < l.key.len) l.key[depth + longestPrefix] else 0;
-                // const c2 = if (depth + longestPrefix < l2.Leaf.key.len) l2.Leaf.key[depth + longestPrefix] else 0;
                 newNode.Node4.n.partialLen = longestPrefix;
-                const maxKeyLen = math.min(MaxPartialLen, longestPrefix);
-                // if (key.len > depth + maxKeyLen)
-                mem.copy(u8, &newNode.Node4.n.partial, key[depth..][0..maxKeyLen]);
-                const c1 = l.key[depth + longestPrefix];
-                const c2 = l2.Leaf.key[depth + longestPrefix];
-                log(.Verbose, "longestPrefix {} depth {} l.key {}-{} '{c}' l2.key {}-{} '{c} ref {*} '\n", .{ longestPrefix, depth, l.key, l.key.len, c1, l2.Leaf.key, l2.Leaf.key.len, c2, ref.* });
+                mem.copy(u8, &newNode.Node4.n.partial, key[depth..][0..math.min(MaxPartialLen, longestPrefix)]);
+                // log(.Verbose, "longestPrefix {} depth {} l.key {}-{} '{c}' l2.key {}-{} '{c} ref {*} '\n", .{ longestPrefix, depth, l.key, l.key.len, c1, l2.Leaf.key, l2.Leaf.key.len, c2, ref.* });
+                log(.Verbose, "longestPrefix {} newNode partial {} partialLen {}\n", .{ longestPrefix, newNode.Node4.n.partial[0..newNode.Node4.n.partialLen], newNode.Node4.n.partialLen });
                 // Add the leaves to the new node4
                 // log(.Verbose, "newNode {}\n", .{newNode});
-                ref.* = newNode;
-                try t.addChild4(newNode, ref, c1, n);
-                try t.addChild4(newNode, ref, c2, l2);
-                log(.Verbose, "newNode {} ref {*} \n", .{ newNode, ref.* });
+                {
+                    @setRuntimeSafety(false); // its ok to read one byte beyond the key end which is a null byte
+                    ref.* = newNode;
+                    try t.addChild4(newNode, ref, l.key[depth + longestPrefix], n);
+                    try t.addChild4(newNode, ref, l2.Leaf.key[depth + longestPrefix], l2);
+                }
+                // log(.Verbose, "newNode {} ref {*} \n", .{ newNode, ref.* });
                 return .Missing;
             }
 
             const baseNode = n.baseNode();
-            // log(.Verbose, "partialLen {}\n", .{baseNode.partialLen});
+            log(.Verbose, "partialLen {}\n", .{baseNode.partialLen});
 
             if (baseNode.partialLen != 0) {
-                const prefixDiff = prefixMismatch(n, key, depth);
+                const prefixDiff = prefixMismatch(n, key, keyLen, depth);
                 log(.Verbose, "prefixDiff {}\n", .{prefixDiff});
                 if (prefixDiff >= baseNode.partialLen) {
                     depth += baseNode.partialLen;
-                    return t.recurseInsertSearch(n, ref, key, value, depth);
+                    return t.recurseInsertSearch(n, ref, key, keyLen, value, depth);
                 }
 
                 var newNode = try t.allocNode(.Node4);
                 ref.* = newNode;
                 baseNode.partialLen = prefixDiff;
-                mem.copy(u8, &newNode.Node4.n.partial, &baseNode.partial);
-
+                mem.copy(u8, &newNode.Node4.n.partial, baseNode.partial[0..math.min(MaxPartialLen, prefixDiff)]);
+                // Adjust the prefix of the old node
                 if (baseNode.partialLen <= MaxPartialLen) {
                     // try t.addChild4(newNode, ref, if (baseNode.partial.len > prefixDiff) baseNode.partial[prefixDiff] else 0, n);
                     try t.addChild4(newNode, ref, baseNode.partial[prefixDiff], n);
-                    if (baseNode.partialLen > prefixDiff)
-                        baseNode.partialLen -= (prefixDiff + 1);
-                    if (baseNode.partial.len > prefixDiff + 1)
-                        mem.copyBackwards(u8, &baseNode.partial, baseNode.partial[prefixDiff + 1 ..]);
+                    log(.Verbose, "1 n.partialLen {} prefixDiff {} baseNode.partial {}\n", .{ baseNode.partialLen, prefixDiff, baseNode.partial });
+                    baseNode.partialLen -= (prefixDiff + 1);
+                    log(.Verbose, "1 n.partialLen {} prefixDiff {}\n", .{ baseNode.partialLen, prefixDiff });
+                    mem.copyBackwards(u8, &baseNode.partial, baseNode.partial[prefixDiff + 1 ..]);
                 } else {
-                    log(.Verbose, "baseNode.partialLen {} prefixDiff {}\n", .{ baseNode.partialLen, prefixDiff });
-                    if (baseNode.partialLen > prefixDiff)
-                        baseNode.partialLen -= (prefixDiff + 1);
+                    log(.Verbose, "n2 .partialLen {} prefixDiff {} baseNode.partial {}\n", .{ baseNode.partialLen, prefixDiff, baseNode.partial });
+                    baseNode.partialLen -= (prefixDiff + 1);
+                    log(.Verbose, "n2 .partialLen {} prefixDiff {}\n", .{ baseNode.partialLen, prefixDiff });
                     const l = minimum(n);
                     try t.addChild4(newNode, ref, l.?.key[depth + prefixDiff], n);
                     mem.copy(u8, &baseNode.partial, l.?.key[depth + prefixDiff + 1 ..]);
                 }
+                log(.Verbose, "partial {} partialLen {}\n", .{ baseNode.partial, baseNode.partialLen });
 
-                var l = try makeLeaf(key, value);
+                var l = try makeLeaf(key, keyLen, value);
                 const c = key[depth + prefixDiff];
                 try t.addChild4(newNode, ref, c, l);
                 return Result{ .Missing = {} };
             }
-            return t.recurseInsertSearch(n, ref, key, value, depth);
+            return t.recurseInsertSearch(n, ref, key, keyLen, value, depth);
         }
-        fn recurseInsertSearch(t: *Tree, n: *Node, ref: **Node, key: []const u8, value: T, depth: usize) InsertError!Result {
+        fn recurseInsertSearch(t: *Tree, n: *Node, ref: **Node, key: []const u8, keyLen: usize, value: T, depth: usize) InsertError!Result {
             var child = findChild(n, key[depth]);
-            log(.Verbose, "recurseInsertSearch {} {} child {*}\n", .{ key, value, child });
+            // log(.Verbose, "recurseInsertSearch {} {} child {*}\n", .{ key, value, child });
             if (child != &emptyNodeRef) {
-                log(.Verbose, "child != null {}\n", .{child});
-                return t.recursiveInsert(child.*, child, key, value, depth + 1);
+                // log(.Verbose, "child != null {}\n", .{child});
+                return t.recursiveInsert(child.*, child, key, keyLen, value, depth + 1);
             }
 
-            var l = try makeLeaf(key, value);
+            var l = try makeLeaf(key, keyLen, value);
             try t.addChild(n, ref, key[depth], l);
             return Result{ .Missing = {} };
         }
@@ -335,10 +380,11 @@ pub fn ArtTree(comptime T: type) type {
         }
         fn findChild(n: *Node, c: u8) **Node {
             const base = n.baseNode();
-            log(.Warning, "findChild {c} {} '{c}'\n", .{ c, @as(@TagType(Node), n.*), c });
+            // log(.Warning, "findChild {c} {} '{c}'\n", .{ c, @as(@TagType(Node), n.*), c });
+            log(.Warning, "findChild '{c}'\n", .{c});
             switch (n.*) {
                 .Node4 => {
-                    log(.Warning, "keys {}\n", .{n.Node4.keys});
+                    // log(.Warning, "keys {}\n", .{n.Node4.keys});
                     var i: usize = 0;
                     while (i < base.numChildren) : (i += 1) {
                         if (n.Node4.keys[i] == c)
@@ -380,7 +426,7 @@ pub fn ArtTree(comptime T: type) type {
         // });
 
         fn addChild4(t: *Tree, n: *Node, ref: **Node, c: u8, child: *Node) InsertError!void {
-            log(.Verbose, "addChild4 {c} numChildren {}\n", .{ c, n.Node4.n.numChildren });
+            // log(.Verbose, "addChild4 {c} numChildren {}\n", .{ c, n.Node4.n.numChildren });
             if (n.Node4.n.numChildren < 4) {
                 var idx: usize = 0;
                 while (idx < n.Node4.n.numChildren) : (idx += 1) {
@@ -388,7 +434,7 @@ pub fn ArtTree(comptime T: type) type {
                 }
 
                 const shiftLen = n.Node4.n.numChildren - idx;
-                log(.Verbose, "idx {} keys {} shiftLen {}\n", .{ idx, n.Node4.keys, shiftLen });
+                // log(.Verbose, "idx {} keys {} shiftLen {}\n", .{ idx, n.Node4.keys, shiftLen });
                 // log(.Verbose, "n {}\n", .{n});
                 // log(.Verbose, "child {}\n", .{child});
                 // shift forward to make room
@@ -399,7 +445,7 @@ pub fn ArtTree(comptime T: type) type {
                 n.Node4.keys[idx] = c;
                 n.Node4.children[idx] = child;
                 n.Node4.n.numChildren += 1;
-                log(.Verbose, "n.Node4.keys {}\n", .{n.Node4.keys});
+                log(.Verbose, "n.Node4.keys {} idx {}\n", .{ n.Node4.keys, idx });
             } else {
                 var newNode = try t.allocNode(.Node16);
                 mem.copy(*Node, &newNode.Node16.children, &n.Node4.children);
@@ -501,6 +547,8 @@ pub fn ArtTree(comptime T: type) type {
             log(level, "keys {}\n", .{n.keys(&buf) catch unreachable});
         }
         pub fn search(t: *Tree, key: []const u8) Result {
+            std.debug.assert(key[key.len - 1] == 0);
+            const keyLen = key.len - 1;
             var _n: ?*Node = t.root;
             var prefixLen: usize = 0;
             var depth: usize = 0;
@@ -508,7 +556,7 @@ pub fn ArtTree(comptime T: type) type {
                 const n = _n.?;
                 log(.Warning, "searching {*} '{}'\n", .{ n, key });
                 if (n.* == .Leaf) {
-                    if (leafMatches(n.Leaf, key))
+                    if (leafMatches(n.Leaf, key, keyLen))
                         return .{ .Found = n };
                     return .Missing;
                 }
@@ -518,7 +566,7 @@ pub fn ArtTree(comptime T: type) type {
                 log(.Warning, "n {}\n", .{n});
                 logNode(.Warning, n);
                 if (baseNode.partialLen != 0) {
-                    prefixLen = checkPrefix(baseNode, key, depth);
+                    prefixLen = checkPrefix(baseNode, key, keyLen, depth);
                     log(.Warning, "prefixLen {}\n", .{prefixLen});
                     if (prefixLen != math.min(MaxPartialLen, baseNode.partialLen))
                         return .Missing;
@@ -527,19 +575,19 @@ pub fn ArtTree(comptime T: type) type {
                 const c2 = key[depth];
                 const child = findChild(n, c2);
                 log(.Warning, "child {} depth {} key {}\n", .{ child, depth, key });
-                _n = if (child) |c| c.* else null;
+                _n = if (child != &emptyNodeRef) child.* else null;
                 depth += 1;
             }
             return .Missing;
         }
-        inline fn leafMatches(n: Leaf, key: []const u8) bool {
-            return mem.eql(u8, n.key, key);
+        inline fn leafMatches(n: Leaf, key: []const u8, keyLen: usize) bool {
+            return mem.eql(u8, n.key, key[0..keyLen]);
         }
 
-        fn checkPrefix(n: *BaseNode, key: []const u8, depth: usize) usize {
-            const max_cmp = math.min(math.min(n.partialLen, MaxPartialLen), key.len - depth);
+        fn checkPrefix(n: *BaseNode, key: []const u8, keyLen: usize, depth: usize) usize {
+            const maxCmp = math.min(math.min(n.partialLen, MaxPartialLen), keyLen - depth);
             var idx: usize = 0;
-            while (idx < max_cmp) : (idx += 1) {
+            while (idx < maxCmp) : (idx += 1) {
                 if (n.partial[idx] != key[depth + idx])
                     return idx;
             }
@@ -599,9 +647,11 @@ pub fn ArtTree(comptime T: type) type {
         const max_spaces = 256;
         const spaces = [1]u8{' '} ** max_spaces;
         pub fn print(t: *Tree) !void {
-            const s = std.io.getStdErr().outStream();
-            _ = try s.write("\n");
-            try t.recursiveShow(s, 0, 0, t.root);
+            // const s = std.io.getStdErr().outStream();
+            // _ = try s.write("\n");
+            // try t.recursiveShow(s, 0, 0, t.root);
+            var data: usize = 0;
+            _ = t.iter(showCb, @as(*c_void, &data));
         }
         const ShowError = error{ DiskQuota, FileTooBig, InputOutput, NoSpaceLeft, AccessDenied, BrokenPipe, SystemResources, OperationAborted, WouldBlock, Unexpected };
         fn recursiveShow(t: *Tree, stream: var, level: usize, lpad: usize, n: *Node) ShowError!void {
@@ -722,28 +772,63 @@ fn debugCb(t: *UTree, n: *UTree.Node, data: *c_void, depth: usize) bool {
     // std.debug.warn("n {}\n", .{n});
     return false;
 }
+const spaces = [1]u8{' '} ** 256;
+pub fn showCb(t: *UTree, n: *UTree.Node, data: *c_void, depth: usize) bool {
+    switch (n.*) {
+        .Empty => {},
+        .Leaf => std.debug.warn("{} -> {}\n", .{ spaces[0 .. depth * 2], n.Leaf.key }),
+        .Node4 => std.debug.warn("{}4-{} ({})\n", .{
+            spaces[0 .. depth * 2],
+            n.Node4.keys[0..n.baseNode().numChildren],
+            n.baseNode().partial[0..n.baseNode().partialLen],
+        }),
+        .Node16 => std.debug.warn("{}16-{} ({})\n", .{
+            spaces[0 .. depth * 2],
+            n.Node16.keys[0..n.baseNode().numChildren],
+            n.baseNode().partial[0..n.baseNode().partialLen],
+        }),
+        .Node48 => std.debug.warn("{}48-{} ({})\n", .{
+            spaces[0 .. depth * 2],
+            n.Node48.keys[0..n.baseNode().numChildren],
+            n.baseNode().partial[0..n.baseNode().partialLen],
+        }),
+        .Node256 => std.debug.warn("{}256-{} ({})\n", .{
+            spaces[0 .. depth * 2],
+            n.Node256.keys[0..n.baseNode().numChildren],
+            n.baseNode().partial[0..n.baseNode().partialLen],
+        }),
+    }
+    return false;
+}
 
 test "basic" {
     // pub fn main() !void {
+    logLevel = .Info;
     var t = ArtTree(usize).init(a);
     defer t.deinit();
+    // const words = [_][]const u8{
+    //     "car\x00",
+    //     "truck\x00",
+    //     "bike\x00",
+    //     "trucker\x00",
+    //     "cars\x00",
+    //     "bikes\x00",
+    // };
+    logLevel = .Verbose;
     const words = [_][]const u8{
-        "car",
-        "truck",
-        "bike",
-        "trucker",
-        "cars",
-        "bikes",
+        "Aaron\x00",
+        "Aaronic\x00",
+        "Aaronical\x00",
     };
     for (words) |w, i| {
-        testing.expectEqual(try t.insert(w, i), .Missing);
+        _ = try t.insert(w, i);
         testing.expectEqual(t.size, i + 1);
         // log(.Verbose, "\n", .{});
     }
-    var data: usize = 0;
-    _ = t.iter(debugCb, @as(*c_void, &data));
-    log(.Verbose, "\n", .{});
-    try t.print();
+    // var data: usize = 0;
+    // _ = t.iter(showCb, @as(*c_void, &data));
+    // log(.Verbose, "\n", .{});
+    // try t.print();
 }
 
 test "49 words" {
@@ -751,8 +836,15 @@ test "49 words" {
     defer t.deinit();
     const words = [_][]const u8{ "A", "A's", "AMD", "AMD's", "AOL", "AOL's", "AWS", "AWS's", "Aachen", "Aachen's", "Aaliyah", "Aaliyah's", "Aaron", "Aaron's", "Abbas", "Abbas's", "Abbasid", "Abbasid's", "Abbott", "Abbott's", "Abby", "Abby's", "Abdul", "Abdul's", "Abe", "Abe's", "Abel", "Abel's", "Abelard", "Abelard's", "Abelson", "Abelson's", "Aberdeen", "Aberdeen's", "Abernathy", "Abernathy's", "Abidjan", "Abidjan's", "Abigail", "Abigail's", "Abilene", "Abilene's", "Abner", "Abner's", "Abraham", "Abraham's", "Abram", "Abram's" };
     for (words) |w, i| {
-        _ = try t.insert(w, i);
-        // testing.expectEqual(t.size, i + 1);
+        log(.Verbose, "line {} lines {}\n", .{ w, i + 1 });
+        if (i + 1 == 11) {
+            logLevel = .Verbose;
+            try t.print();
+        }
+        var buf: [50]u8 = undefined;
+        var wZ = try std.fmt.bufPrint(&buf, "{}\x00", .{w});
+        _ = try t.insert(wZ, i);
+        testing.expectEqual(t.size, i + 1);
     }
     var data: usize = 0;
     _ = t.iter(debugCb, @as(*c_void, &data));
@@ -894,8 +986,8 @@ test "insert search" {
     testing.expectEqual(l.?.key[0], 'A');
 
     // Check the maximum
-    l = t.maximum();
-    testing.expectEqualSlices(l.?.key[0], "zythum");
+    l = t.max();
+    testing.expectEqualSlices(u8, l.?.key, "zythum");
 }
 
 test "node keys correctness" {

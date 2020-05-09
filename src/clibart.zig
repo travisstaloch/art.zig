@@ -40,13 +40,19 @@ test "basic insert" {
     var t: art.art_tree = undefined;
     _ = art.art_tree_init(&t);
     defer _ = art.art_tree_destroy(&t);
+    // const words = [_][]const u8{
+    //     "car",
+    //     "truck",
+    //     "bike",
+    //     "trucker",
+    //     "cars",
+    //     "bikes",
+    // };
+    show_debug = 1;
     const words = [_][]const u8{
-        "car",
-        "truck",
-        "bike",
-        "trucker",
-        "cars",
-        "bikes",
+        "Aaron\x00",
+        "Aaronic\x00",
+        "Aaronical\x00",
     };
     for (words) |w, _i| {
         var i = _i;
@@ -54,8 +60,8 @@ test "basic insert" {
         _ = art.art_insert(&t, w.ptr, @intCast(c_int, w.len), @as(*c_void, &i));
         std.debug.warn("\n", .{});
     }
-    // var data: usize = 0;
-    // _ = art.art_iter(&t, cb2, @as(*c_void, &data));
+    var data: usize = 0;
+    _ = art.art_iter2(&t, showCb_art, @as(*c_void, &data));
 }
 
 test "49 insert search" {
@@ -172,7 +178,7 @@ test "iter path length" {
     const stream = &f.inStream();
     var buf: [512:0]u8 = undefined;
     // @import("art2.zig").logLevel = .Warn;
-    const problemLine = 260;
+    const problemLine = 15;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
         buf[line.len] = 0;
         line.len += 1;
@@ -188,6 +194,7 @@ test "iter path length" {
         _ = try ta.insert(line.*, lines);
 
         // if (lines % 1000 == 0) {
+        if (lines >= problemLine) break;
         lines += 1;
     }
     var size: usize = 0;
@@ -200,20 +207,20 @@ test "iter path length" {
     }
 }
 
-fn keyCmpCb(data: ?*c_void, n: [*c]art.art_node, value: ?*c_void, depth: c_uint) callconv(.C) c_int {
-    // std.debug.warn("keyCmpCb {}\n", .{n[0]});
+fn showCb_art(data: ?*c_void, n: [*c]art.art_node, value: ?*c_void, depth: c_uint) callconv(.C) c_int {
+    // std.debug.warn("showCb_art {}\n", .{n[0]});
     switch (n[0].type) {
         art.NODE4 => {
             const nn = @ptrCast(*art.art_node4, @alignCast(@alignOf(*art.art_node4), &n[0]));
-            std.debug.warn("{}4-{}\n", .{ spaces[0 .. depth * 2], nn.keys });
+            std.debug.warn("{}4-{} ({})\n", .{ spaces[0 .. depth * 2], nn.keys[0..n[0].num_children], n[0].partial[0..n[0].partial_len] });
         },
         art.NODE16 => {
             const nn = @ptrCast(*art.art_node16, @alignCast(@alignOf(*art.art_node16), &n[0]));
-            std.debug.warn("{}16-{}\n", .{ spaces[0 .. depth * 2], nn.keys });
+            std.debug.warn("{}16-{} ({})\n", .{ spaces[0 .. depth * 2], nn.keys[0..n[0].num_children], n[0].partial[0..n[0].partial_len] });
         },
         art.NODE48 => {
             const nn = @ptrCast(*art.art_node48, @alignCast(@alignOf(*art.art_node48), &n[0]));
-            std.debug.warn("{}48-{}\n", .{ spaces[0 .. depth * 2], nn.keys });
+            std.debug.warn("{}48-{} ({})\n", .{ spaces[0 .. depth * 2], nn.keys[0..n[0].num_children], n[0].partial[0..n[0].partial_len] });
         },
         art.NODE256 => {
             const nn = @ptrCast(*art.art_node256, @alignCast(@alignOf(*art.art_node256), &n[0]));
@@ -223,24 +230,19 @@ fn keyCmpCb(data: ?*c_void, n: [*c]art.art_node, value: ?*c_void, depth: c_uint)
                     std.debug.warn("{c}", .{@truncate(u8, i)});
                 }
             }
+            std.debug.warn("{}\n", .{n[0].partial[0..n[0].partial_len]});
+        },
+        else => {
+            std.debug.warn("{} -> ", .{spaces[0 .. depth * 2]});
+            const nn = art.display_leaf(&n[0]);
             std.debug.warn("\n", .{});
         },
-        else => {},
     }
     return 0;
 }
 const spaces = [1]u8{' '} ** 256;
-fn keyCmpCba(t: *UTree, n: *UTree.Node, data: *c_void, depth: usize) bool {
-    switch (n.*) {
-        .Empty, .Leaf => {},
-        .Node4 => std.debug.warn("{}4-{}\n", .{ spaces[0 .. depth * 2], n.Node4.keys }),
-        .Node16 => std.debug.warn("{}16-{}\n", .{ spaces[0 .. depth * 2], n.Node16.keys }),
-        .Node48 => std.debug.warn("{}48-{}\n", .{ spaces[0 .. depth * 2], n.Node48.keys }),
-        .Node256 => std.debug.warn("{}256-{}\n", .{ spaces[0 .. depth * 2], n.Node256.keys }),
-    }
-    return false;
-}
 test "compare node keys" {
+    const Lang = enum { c, z, both };
     var t: art.art_tree = undefined;
     _ = art.art_tree_init(&t);
     defer _ = art.art_tree_destroy(&t);
@@ -256,38 +258,49 @@ test "compare node keys" {
     // @import("art2.zig").logLevel = .Warn;
     var node = try a.create(art.art_node);
     var nodea = try a.create(UTree.Node);
+    const lang = .z;
+    // const stopLine = 15;
+    const stopLine = 10000000;
+    // show_debug = 1;
+    Art.logLevel = .Verbose;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
         buf[line.len] = 0;
         line.len += 1;
         buf[line.len] = 0;
-        // if (lines >= problemLine) {
-        //     show_debug = 1;
-        //     Art.logLevel = .Warn;
-        // }
-        // art.debug("--- c code ----\n");
-        _ = art.art_insert(&t, line.ptr, @intCast(c_int, line.len), @as(*c_void, &lines));
-        // Art.log(.Verbose, "--- zig code ---\n", .{});
-        _ = try ta.insert(line.*, lines);
+        if (lines == stopLine) {
+            show_debug = 1;
+            Art.logLevel = .Verbose;
+        }
+        // std.debug.warn("line {} lines {}\n", .{ line.*, lines });
+        if (lang == .c or lang == .both) {
+            // art.debug("--- c code ----\n");
+            // art.debug("line %s lines %d\n", line, lines);
+            _ = art.art_insert(&t, line.ptr, @intCast(c_int, line.len), @as(*c_void, &lines));
+            // _ = art.art_iter2(&t, showCb_art, @as(*c_void, node));
+        } else if (lang == .z or lang == .both) {
+            // Art.log(.Verbose, "--- zig code ---\n", .{});
+            // Art.log(.Verbose, "line {} lines {}\n", .{ line, lines });
+            _ = try ta.insert(line.*, lines);
+            // _ = ta.iter(Art.showCb, @as(*c_void, nodea));
+        }
 
         // if (lines % 1000 == 0) {
         // if (lines >= problemLine) {
 
         // std.debug.warn("--- c code ----\n", .{});
-        _ = art.art_iter2(&t, keyCmpCb, @as(*c_void, node));
+
         // std.debug.warn("---\n", .{});
-        // std.debug.warn("--- zig code ---\n", .{});
-        // _ = ta.iter(keyCmpCba, @as(*c_void, nodea));
-        std.debug.warn("---\n", .{});
+        Art.log(.Verbose, "---\n", .{});
         // if (size != sizea) {
         //     std.debug.warn("size differs. expecting size {} actual size {}\n", .{ size, sizea });
         //     testing.expectEqual(size, sizea);
         // }
         // }
-        if (lines > 10) break;
+        if (lines == stopLine) break;
         lines += 1;
     }
-    // _ = art.art_iter2(&t, keyCmpCb, @as(*c_void, node));
-    // _ = ta.iter(keyCmpCba, @as(*c_void, nodea));
+    // _ = art.art_iter2(&t, showCb_art, @as(*c_void, node));
+    // _ = ta.iter(showCb, @as(*c_void, nodea));
 }
 
 // test "node keys correctness" {
