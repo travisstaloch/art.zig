@@ -1,0 +1,1 @@
+#define LANG 'c'
