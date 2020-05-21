@@ -64,21 +64,16 @@ test "compare node keys" {
             const result = art.art_insert(&t, line.ptr, @intCast(c_int, line.len), temp);
         } else if (lang == .z or lang == .both) {
             const result = try ta.insert(line.*, lines);
-            if (result == .created) {
+            if (result == .missing) {
                 // Art.log(.Verbose, "result null\n", .{});
             } else {
                 // Art.log(.Verbose, "result {}\n", .{result.Found});
             }
             // _ = ta.iter(Art.showCb, @as(*c_void, nodea));
         }
-
-        // if (lines % 1000 == 0) {
-        // }
-        // if (lines == stopLine) break;
         lines += 1;
     }
-    // _ = art.art_iter2(&t, showCb_art, @as(*c_void, node));
-    // _ = ta.iter(showCb, @as(*c_void, nodea));
+
     if (lang == .c or lang == .both) {
         show_debug = 1;
         art.art_print(&t);
