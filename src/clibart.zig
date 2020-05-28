@@ -7,7 +7,7 @@ const clibart = @cImport({
 });
 extern var show_debug: c_int;
 
-const art = @import("art2.zig");
+const art = @import("art.zig");
 const ArtTree = art.ArtTree;
 // const a = testing.allocator;
 // var arena = std.heap.ArenaAllocator.init(testing.allocator);
@@ -37,14 +37,14 @@ test "compare node keys" {
     var linei: usize = 1;
     const stream = &f.inStream();
     var buf: [512:0]u8 = undefined;
-    const stopLine = 200;
+    const stop_line = 200;
     var i: usize = 0;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
         defer i += 1;
-        // if (i > stopLine) break;
+        // if (i > stop_line) break;
         buf[line.len] = 0;
         line.len += 1;
-        if (linei == stopLine) {
+        if (linei == stop_line) {
             std.debug.warn("", .{});
         }
         if (lang == .c or lang == .both) {
@@ -82,7 +82,7 @@ test "compare tree after delete" {
     var linei: usize = 1;
     const stream = &f.inStream();
     var buf: [512:0]u8 = undefined;
-    const stopLine = 400000;
+    const stop_line = 197141;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
         buf[line.len] = 0;
         line.len += 1;
@@ -95,7 +95,7 @@ test "compare tree after delete" {
         } else if (lang == .z or lang == .both) {
             const result = try ta.insert(line.*, linei);
         }
-        // if (linei == stopLine) break;
+        // if (linei == stop_line) break;
         linei += 1;
     }
 
@@ -104,7 +104,7 @@ test "compare tree after delete" {
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
         buf[line.len] = 0;
         line.len += 1;
-        if (linei == 233882) {
+        if (linei == stop_line) {
             if (lang == .c or lang == .both) {
                 show_debug = 1;
                 artc.art_print(&t);
@@ -112,6 +112,9 @@ test "compare tree after delete" {
             }
             if (lang == .z or lang == .both) {
                 art.showLog = true;
+                // var list = std.ArrayList(u8).init(a);
+                // try ta.printToStream(&std.io.getStdOut().outStream());
+                // try ta.printToStream(&list.outStream());
                 try ta.print();
                 art.showLog = false;
             }
@@ -126,7 +129,7 @@ test "compare tree after delete" {
             }
             testing.expect(result == .found);
         }
-        if (linei == stopLine) break;
+        if (linei == stop_line) break;
         linei += 1;
     }
     if (lang == .c or lang == .both) {
@@ -136,7 +139,9 @@ test "compare tree after delete" {
     }
     if (lang == .z or lang == .both) {
         art.showLog = true;
-        try ta.print();
+        // var list = std.ArrayList(u8).init(a);
+        // try ta.printToStream(&std.io.getStdOut().outStream());
+        // try ta.printToStream(&list.outStream());
         art.showLog = false;
     }
 }
