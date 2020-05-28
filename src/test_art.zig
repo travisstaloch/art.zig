@@ -66,6 +66,7 @@ test "insert and delete many" {
     inline for (Types) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
         var t = ArtTree(T).init(lca.internal_allocator);
+        defer t.deinit();
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
         defer f.close();
@@ -110,47 +111,79 @@ test "long prefix" {
     testing.expectEqual(t.search("this:key:has:a:long:common:prefix:2\x00"), .{ .found = 2 });
     testing.expectEqual(t.search("this:key:has:a:long:prefix:3\x00"), .{ .found = 3 });
 
-    const expected = Strs.from(&[_]Str{
-        Str.from("this:key:has:a:long:common:prefix:1"),
-        Str.from("this:key:has:a:long:common:prefix:2"),
-        Str.from("this:key:has:a:long:prefix:3"),
-    });
+    const expected = &[_][]const u8{
+        "this:key:has:a:long:common:prefix:1\x00",
+        "this:key:has:a:long:common:prefix:2\x00",
+        "this:key:has:a:long:prefix:3\x00",
+    };
 
-    var p = prefix_data{ .count = 0, .max_count = 3, .expected = expected };
+    var p = prefix_data{ .count = 0, .max_count = 3, .expected = &expected };
     testing.expect(!t.iterPrefix("this:key:has", test_prefix_cb, &p));
     testing.expectEqual(p.count, p.max_count);
 }
 
-pub fn Slice(comptime T: type) type {
-    return extern struct {
-        ptr: [*]const T,
-        len: usize,
-        const Self = @This();
-        pub fn from(s: []const T) Self {
-            return @bitCast(Self, s);
+test "insert search uuid" {
+    inline for (Types) |T| {
+        var lca = std.testing.LeakCountAllocator.init(cal);
+        var t = ArtTree(T).init(lca.internal_allocator);
+        defer t.deinit();
+
+        const f = try std.fs.cwd().openFile("./testdata/uuid.txt", .{ .read = true });
+        defer f.close();
+
+        var linei: usize = 1;
+        const stream = &f.inStream();
+        var buf: [256]u8 = undefined;
+        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+            buf[line.len] = 0;
+            line.len += 1;
+            const result = try t.insert(line.*, valAsType(T, linei));
+            testing.expect(result == .missing);
+            linei += 1;
         }
-        pub fn to(self: Self) []const T {
-            return @bitCast([]const T, self);
+
+        try f.seekTo(0);
+        linei = 1;
+        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+            buf[line.len] = 0;
+            line.len += 1;
+            const result = t.search(line.*);
+            testing.expect(result == .found);
+            testing.expectEqual(result.found, linei);
+
+            linei += 1;
         }
-    };
+
+        // Check the minimum
+        var l = UsizeTree.minimum(t.root);
+        testing.expect(l != null);
+        testing.expectEqualSlices(u8, l.?.key, "00026bda-e0ea-4cda-8245-522764e9f325\x00");
+
+        // Check the maximum
+        l = UsizeTree.maximum(t.root);
+        testing.expect(l != null);
+        testing.expectEqualSlices(u8, l.?.key, "ffffcb46-a92e-4822-82af-a7190f9c1ec5\x00");
+
+        try lca.validate();
+    }
 }
-const Str = Slice(u8);
-const Strs = Slice(Str);
-const prefix_data = extern struct {
+
+const prefix_data = struct {
     count: usize,
     max_count: usize,
-    expected: Slice(Slice(u8)),
-    // expected: [*c][*c]const u8,
+    expected: []const []const u8,
 };
 
 fn test_prefix_cb(n: *UsizeTree.Node, data: *c_void, depth: usize) bool {
+    // std.debug.warn("test_prefix_cb {}\n", .{n});
     if (n.* == .leaf) {
         const k = n.*.leaf.key;
         // var p = @ptrCast(*prefix_data, @alignCast(@alignOf(*prefix_data), data));
         var p = mem.bytesAsValue(prefix_data, mem.asBytes(@intToPtr(*prefix_data, @ptrToInt(data))));
-        // log("test_prefix_cb {} key {s} expected {}\n", .{ p, k, p.expected[p.count] });
+        // std.debug.warn("test_prefix_cb {} key {s} expected {}\n", .{ p, k, p.expected[p.count] });
         testing.expect(p.count < p.max_count);
-        testing.expectEqualSlices(u8, k[0 .. k.len - 1], p.expected.to()[p.count].to());
+        const expected = p.expected[p.count];
+        testing.expectEqualSlices(u8, k, expected);
         p.count += 1;
     }
     return false;
@@ -159,55 +192,57 @@ fn test_prefix_cb(n: *UsizeTree.Node, data: *c_void, depth: usize) bool {
 test "iter prefix" {
     var t = ArtTree(usize).init(cal);
     defer t.deinit();
-    testing.expectEqual(t.insert("api.foo.bar\x00", 0), .missing);
-    testing.expectEqual(t.insert("api.foo.baz\x00", 0), .missing);
-    testing.expectEqual(t.insert("api.foe.fum\x00", 0), .missing);
-    testing.expectEqual(t.insert("abc.123.456\x00", 0), .missing);
-    testing.expectEqual(t.insert("api.foo\x00", 0), .missing);
-    testing.expectEqual(t.insert("api\x00", 0), .missing);
+    const s1 = "api.foo.bar\x00";
+    const s2 = "api.foo.baz\x00";
+    const s3 = "api.foe.fum\x00";
+    const s4 = "abc.123.456\x00";
+    const s5 = "api.foo\x00";
+    const s6 = "api\x00";
+    testing.expectEqual(t.insert(s1, 0), .missing);
+    testing.expectEqual(t.insert(s2, 0), .missing);
+    testing.expectEqual(t.insert(s3, 0), .missing);
+    testing.expectEqual(t.insert(s4, 0), .missing);
+    testing.expectEqual(t.insert(s5, 0), .missing);
+    testing.expectEqual(t.insert(s6, 0), .missing);
 
     // Iterate over api
-    const expected = Strs.from(&[_]Str{ Str.from("api"), Str.from("api.foe.fum"), Str.from("api.foo"), Str.from("api.foo.bar"), Str.from("api.foo.baz") });
-    var p = prefix_data{ .count = 0, .max_count = 5, .expected = expected };
+    const expected = [_][]const u8{ s6, s3, s5, s1, s2 };
+    var p = prefix_data{ .count = 0, .max_count = 5, .expected = &expected };
     testing.expect(!t.iterPrefix("api", test_prefix_cb, &p));
     testing.expectEqual(p.max_count, p.count);
 
     // Iterate over 'a'
-    const expected2 = Strs.from(&[_]Str{ Str.from("abc.123.456"), Str.from("api"), Str.from("api.foe.fum"), Str.from("api.foo"), Str.from("api.foo.bar"), Str.from("api.foo.baz") });
-    var p2 = prefix_data{ .count = 0, .max_count = 6, .expected = expected2 };
+    const expected2 = [_][]const u8{ s4, s6, s3, s5, s1, s2 };
+    var p2 = prefix_data{ .count = 0, .max_count = 6, .expected = &expected2 };
     testing.expect(!t.iterPrefix("a", test_prefix_cb, &p2));
     testing.expectEqual(p2.max_count, p2.count);
 
     // Check a failed iteration
-    var p3 = prefix_data{ .count = 0, .max_count = 6, .expected = Strs.from(&[_]Str{}) };
+    var p3 = prefix_data{ .count = 0, .max_count = 6, .expected = &[_][]const u8{} };
     testing.expect(!t.iterPrefix("b", test_prefix_cb, &p3));
     testing.expectEqual(p3.count, 0);
 
     // Iterate over api.
-    const expected4 = Strs.from(&[_]Str{ Str.from("api.foe.fum"), Str.from("api.foo"), Str.from("api.foo.bar"), Str.from("api.foo.baz") });
-    var p4 = prefix_data{ .count = 0, .max_count = 4, .expected = expected4 };
+    const expected4 = [_][]const u8{ s3, s5, s1, s2 };
+    var p4 = prefix_data{ .count = 0, .max_count = 4, .expected = &expected4 };
     testing.expect(!t.iterPrefix("api.", test_prefix_cb, &p4));
-    // i commented out these failing tests.
-    // i suspect the fails result from using a non-packed/extern struct for prefix_data
-    // testing.expectEqual(p4.max_count, p4.count);
+    testing.expectEqual(p4.max_count, p4.count);
 
     // Iterate over api.foo.ba
-    const expected5 = Strs.from(&[_]Str{Str.from("api.foo.bar")});
-    var p5 = prefix_data{ .count = 0, .max_count = 1, .expected = expected5 };
+    const expected5 = [_][]const u8{s1};
+    var p5 = prefix_data{ .count = 0, .max_count = 1, .expected = &expected5 };
     testing.expect(!t.iterPrefix("api.foo.bar", test_prefix_cb, &p5));
-    // testing.expectEqual(p5.max_count, p5.count);
+    testing.expectEqual(p5.max_count, p5.count);
 
     // Check a failed iteration on api.end
-    var p6 = prefix_data{ .count = 0, .max_count = 0, .expected = Strs.from(&[_]Str{}) };
+    var p6 = prefix_data{ .count = 0, .max_count = 0, .expected = &[_][]const u8{} };
     testing.expect(!t.iterPrefix("api.end", test_prefix_cb, &p6));
     testing.expectEqual(p6.count, 0);
 
     // Iterate over empty prefix
-    // log("\nempty prefix\n", .{});
-    // TODO why isn't this working?
-    var p7 = prefix_data{ .count = 0, .max_count = 6, .expected = expected2 };
+    var p7 = prefix_data{ .count = 0, .max_count = 6, .expected = &expected2 };
     testing.expect(!t.iterPrefix("", test_prefix_cb, &p7));
-    // testing.expectEqual(p7.max_count, p7.count);
+    testing.expectEqual(p7.max_count, p7.count);
 }
 
 test "insert very long key" {
@@ -360,11 +395,11 @@ test "insert search delete" {
         linei += 1;
     }
 
-    // // Check the minimum
+    // Check the minimum
     var l = UsizeTree.minimum(t.root);
     testing.expectEqual(l, null);
 
-    // // Check the maximum
+    // Check the maximum
     l = UsizeTree.maximum(t.root);
     testing.expectEqual(l, null);
 
@@ -416,13 +451,32 @@ test "insert search delete 2" {
         linei += 1;
     }
 
-    // // Check the minimum
+    // Check the minimum
     var l = UsizeTree.minimum(t.root);
     testing.expectEqual(l, null);
 
-    // // Check the maximum
+    // Check the maximum
     l = UsizeTree.maximum(t.root);
     testing.expectEqual(l, null);
 
     try lca.validate();
+}
+
+test "max prefix len iter" {
+    var t = ArtTree(usize).init(tal);
+    defer t.deinit();
+
+    const key1 = "foobarbaz1-test1-foo\x00";
+    const key2 = "foobarbaz1-test1-bar\x00";
+    const key3 = "foobarbaz1-test2-foo\x00";
+
+    testing.expectEqual(t.insert(key1, 1), .missing);
+    testing.expectEqual(t.insert(key2, 2), .missing);
+    testing.expectEqual(t.insert(key3, 3), .missing);
+    testing.expectEqual(t.size, 3);
+
+    const expected = [_][]const u8{ key2, key1 };
+    var p = prefix_data{ .count = 0, .max_count = 2, .expected = &expected };
+    testing.expect(!t.iterPrefix("foobarbaz1-test1", test_prefix_cb, &p));
+    testing.expectEqual(p.count, p.max_count);
 }

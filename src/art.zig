@@ -223,8 +223,12 @@ pub fn ArtTree(comptime T: type) type {
             return t.recursiveIter(t.root, data, 0, cb);
         }
 
-        pub fn iterPrefix(t: *Tree, key: []const u8, comptime cb: Callback, data: ?*c_void) bool {
-            // std.debug.assert(key[key.len - 1] == 0);
+        fn leafPrefixMatches(n: Leaf, prefix: []const u8) bool {
+            return n.key.len > prefix.len and std.mem.startsWith(u8, n.key, prefix);
+        }
+
+        pub fn iterPrefix(t: *Tree, prefix: []const u8, comptime cb: Callback, data: ?*c_void) bool {
+            std.debug.assert(prefix.len == 0 or prefix[prefix.len - 1] != 0);
             var child: **Node = undefined;
             var _n: ?*Node = t.root;
             var prefix_len: usize = undefined;
@@ -233,16 +237,16 @@ pub fn ArtTree(comptime T: type) type {
                 // Might be a leaf
                 if (n.* == .leaf) {
                     // Check if the expanded path matches
-                    if (mem.eql(u8, n.leaf.key, key)) {
+                    if (leafPrefixMatches(n.*.leaf, prefix)) {
                         return cb(n, data, depth);
                     }
                     return false;
                 }
 
                 // If the depth matches the prefix, we need to handle this node
-                if (depth == key.len) {
+                if (depth == prefix.len) {
                     if (minimum(n)) |l| {
-                        if (mem.eql(u8, l.key, key))
+                        if (leafPrefixMatches(l.*, prefix))
                             return t.recursiveIter(n, data, depth, cb);
                     }
                     return false;
@@ -252,7 +256,7 @@ pub fn ArtTree(comptime T: type) type {
 
                 // Bail if the prefix does not match
                 if (base.partial_len > 0) {
-                    prefix_len = prefixMismatch(n, key, depth);
+                    prefix_len = prefixMismatch(n, prefix, depth);
 
                     // Guard if the mis-match is longer than the MAX_PREFIX_LEN
                     if (prefix_len > base.partial_len)
@@ -262,7 +266,7 @@ pub fn ArtTree(comptime T: type) type {
                     if (prefix_len == 0) {
                         return false;
                         // If we've matched the prefix, iterate on this node
-                    } else if (depth + prefix_len == key.len) {
+                    } else if (depth + prefix_len == prefix.len) {
                         return t.recursiveIter(n, data, depth, cb);
                     }
 
@@ -271,7 +275,11 @@ pub fn ArtTree(comptime T: type) type {
                 }
 
                 // Recursively search
-                child = findChild(n, key[depth]);
+                child = findChild(n, prefix[depth]);
+                // std.debug.warn("prefix {} prefix[{}] {c} child ", .{ prefix, depth, prefix[depth] });
+                // showLog = true;
+                // displayNode(child.*, 0);
+                // std.debug.warn("\n", .{});
                 _n = if (child != &emptyNodeRef) child.* else null;
                 depth += 1;
             }
@@ -394,6 +402,7 @@ pub fn ArtTree(comptime T: type) type {
             return .missing;
         }
         fn longestCommonPrefix(l: Leaf, l2: Leaf, depth: usize) u8 {
+            // FIXME should these be key.len - 1?
             const max_cmp = math.min(l.key.len, l2.key.len) - depth;
             var idx: u8 = 0;
             while (idx < max_cmp) : (idx += 1) {
@@ -411,6 +420,7 @@ pub fn ArtTree(comptime T: type) type {
         /// Calculates the index at which the prefixes mismatch
         fn prefixMismatch(n: *Node, key: []const u8, depth: u32) u8 {
             const base = n.baseNode();
+            // FIXME should this be key.len - 1?
             var max_cmp: u32 = math.min(math.min(MaxPrefixLen, base.partial_len), key.len - depth);
             var idx: u8 = 0;
             while (idx < max_cmp) : (idx += 1) {
@@ -419,6 +429,7 @@ pub fn ArtTree(comptime T: type) type {
             }
             if (base.partial_len > MaxPrefixLen) {
                 const l = minimum(n);
+                // FIXME should this be key.len - 1?
                 max_cmp = @truncate(u32, math.min(l.?.key.len, key.len)) - depth;
                 while (idx < max_cmp) : (idx += 1) {
                     if (l.?.key[idx + depth] != key[depth + idx])
@@ -601,6 +612,7 @@ pub fn ArtTree(comptime T: type) type {
             n.node256.children[c] = child;
         }
         fn checkPrefix(n: *BaseNode, key: []const u8, depth: usize) usize {
+            // FIXME should this be key.len - 1?
             const max_cmp = math.min(math.min(n.partial_len, MaxPrefixLen), key.len - depth);
             var idx: usize = 0;
             while (idx < max_cmp) : (idx += 1) {
