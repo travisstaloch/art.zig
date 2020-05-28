@@ -54,6 +54,67 @@ pub fn ArtTree(comptime T: type) type {
                     else => unreachable,
                 };
             }
+
+            pub fn numChildren(n: *Node) u8 {
+                return switch (n.*) {
+                    .node4 => n.*.node4.num_children,
+                    .node16 => n.*.node16.num_children,
+                    .node48 => n.*.node48.num_children,
+                    .node256 => n.*.node256.num_children,
+                    else => 0,
+                };
+            }
+
+            pub fn childIterator(n: *Node) ChildIterator {
+                return ChildIterator{ .i = 0, .parent = n };
+            }
+
+            pub const ChildIterator = struct {
+                i: u9,
+                parent: *Node,
+                pub fn next(self: *ChildIterator) ?*Node {
+                    const result = switch (self.parent.*) {
+                        .node4 => blk: {
+                            if (self.i == 4) break :blk emptyNodeRef;
+                            defer self.i += 1;
+                            break :blk self.parent.node4.children[self.i];
+                        },
+                        .node16 => blk: {
+                            if (self.i == 16) break :blk emptyNodeRef;
+                            defer self.i += 1;
+                            break :blk self.parent.node16.children[self.i];
+                        },
+                        .node48 => blk: {
+                            if (self.i == 256) break :blk emptyNodeRef;
+                            var i: u9 = self.i;
+                            defer self.i = i + 1;
+                            while (true) : (i += 1) {
+                                const idx = self.parent.node48.keys[i];
+                                if (idx != 0)
+                                    break :blk self.parent.node48.children[idx - 1];
+
+                                if (i == 255) break;
+                            }
+                            break :blk emptyNodeRef;
+                        },
+                        .node256 => blk: {
+                            if (self.i == 256) break :blk emptyNodeRef;
+                            var i: u9 = self.i;
+                            defer self.i = i + 1;
+                            while (true) : (i += 1) {
+                                if (self.parent.node256.children[i] != emptyNodeRef) {
+                                    break :blk self.parent.node256.children[i];
+                                }
+                                if (i == 255) break;
+                            }
+                            break :blk emptyNodeRef;
+                        },
+                        else => unreachable,
+                    };
+                    if (result == emptyNodeRef) return null;
+                    return result;
+                }
+            };
         };
 
         pub var emptyNode: Node = .{ .empty = {} };
@@ -83,6 +144,7 @@ pub fn ArtTree(comptime T: type) type {
         pub fn displayNode(n: *Node, depth: usize) void {
             _ = showCb(n, emptyNodeRef, depth);
         }
+        // TODO use childIterator()
         pub fn displayChildren(n: *Node, depth: usize) void {
             if (n.* == .leaf or n.* == .empty) return;
             const base = n.baseNode();
@@ -125,17 +187,11 @@ pub fn ArtTree(comptime T: type) type {
         }
         pub fn search(t: *Tree, key: []const u8) Result {
             std.debug.assert(key[key.len - 1] == 0);
-            log("search '{}'\n", .{key});
             var child: **Node = &emptyNodeRef;
             var _n: ?*Node = t.root;
             var prefix_len: usize = undefined;
             var depth: u32 = 0;
             while (_n) |n| {
-                // log("child {*} depth {}\n", .{ child.*, depth });
-                displayNode(n, 0);
-                displayChildren(n, 0);
-                // if (child != &emptyNodeRef)
-                //     _ = showCb(child.*, @as(*c_void, &prefix_len), 0);
                 // Might be a leaf
                 if (n.* == .leaf) {
                     // Check if the expanded path matches
@@ -147,20 +203,15 @@ pub fn ArtTree(comptime T: type) type {
                 const base = n.baseNode();
 
                 // Bail if the prefix does not match
-                log("base.partial_len {}\n", .{base.partial_len});
                 if (base.partial_len > 0) {
                     prefix_len = checkPrefix(base, key, depth);
-                    // debug("prefixLen %d\n", prefix_len);
                     if (prefix_len != math.min(MaxPrefixLen, base.partial_len))
                         return .missing;
                     depth += base.partial_len;
                 }
 
                 // Recursively search
-
                 child = findChild(n, key[depth]);
-                // displayNode(child.*);
-
                 _n = if (child != &emptyNodeRef) child.* else null;
                 depth += 1;
             }
@@ -226,16 +277,12 @@ pub fn ArtTree(comptime T: type) type {
             }
             return false;
         }
-
+        // TODO use childIterator()
         // Recursively destroys the tree
         fn deinitNode(t: *Tree, n: *Node) void {
             switch (n.*) {
-                .empty => {},
-                .leaf => |l| {
-                    t.a.free(l.key);
-                    t.a.destroy(n);
-                    return;
-                },
+                .empty => return,
+                .leaf => |l| t.a.free(l.key),
                 .node4 => {
                     var i: usize = 0;
                     while (i < n.node4.num_children) : (i += 1) {
@@ -303,14 +350,11 @@ pub fn ArtTree(comptime T: type) type {
                 return .missing;
             }
             var base = n.baseNode();
-            // warn("1 partial {} partial_len {}\n", .{ base.partial, base.partial_len });
             if (base.partial_len != 0) {
                 // Determine if the prefixes differ, since we need to split
                 const prefix_diff = prefixMismatch(n, key, depth);
-                warn("prefix_diff {}\n", .{prefix_diff});
-                if (prefix_diff >= base.partial_len) {
+                if (prefix_diff >= base.partial_len)
                     return try t.recursiveInsertSearch(n, ref, key, value, depth + base.partial_len);
-                }
 
                 // Create a new node
                 var new_node = try t.allocNode(.node4);
@@ -321,33 +365,18 @@ pub fn ArtTree(comptime T: type) type {
                 // Adjust the prefix of the old node
                 if (base.partial_len <= MaxPrefixLen) {
                     try t.addChild4(new_node, ref, base.partial[prefix_diff], n);
-                    //   debug("1 n.partial_len {} prefix_diff {} base.partial %.*s\n",
-                    //         base.partial_len, prefix_diff, MaxPrefixLen, base.partial);
                     base.partial_len -= (prefix_diff + 1);
-
-                    // const cstd = @cImport({
-                    //     @cInclude("string.h");
-                    // });
-                    // _ = cstd.memmove(&base.partial, &base.partial + prefix_diff + 1, math.min(MaxPrefixLen, base.partial_len));
                     mem.copy(u8, &base.partial, base.partial[prefix_diff + 1 ..][0..math.min(MaxPrefixLen, base.partial_len)]);
-                    warn("1 n.partial_len {} prefix_diff {}\n", .{ base.partial_len, prefix_diff });
                 } else {
-                    //   debug("2 n.partial_len {} prefix_diff {} base.partial %.*s\n",
-                    //         base.partial_len, prefix_diff, MaxPrefixLen, base.partial);
                     base.partial_len -= (prefix_diff + 1);
                     var l = minimum(n) orelse return error.NoMinimum;
                     try t.addChild4(new_node, ref, l.key[depth + prefix_diff], n);
                     mem.copy(u8, &base.partial, l.key[depth + prefix_diff + 1 ..][0..math.min(MaxPrefixLen, base.partial_len)]);
-                    warn("2 n.partial_len {} prefix_diff {}\n", .{ base.partial_len, prefix_diff });
                 }
-                warn("2 partial {} partial_len {}\n", .{ base.partial, base.partial_len });
 
                 // Insert the new leaf
                 var l = try t.makeLeaf(key, value);
-                {
-                    @setRuntimeSafety(false);
-                    try t.addChild4(new_node, ref, key[depth + prefix_diff], l);
-                }
+                try t.addChild4(new_node, ref, key[depth + prefix_diff], l);
 
                 return .missing;
             }
@@ -366,7 +395,6 @@ pub fn ArtTree(comptime T: type) type {
         }
         fn longestCommonPrefix(l: Leaf, l2: Leaf, depth: usize) u8 {
             const max_cmp = math.min(l.key.len, l2.key.len) - depth;
-            // max_cmp = if (max_cmp > depth) max_cmp - depth else 0;
             var idx: u8 = 0;
             while (idx < max_cmp) : (idx += 1) {
                 if (l.key[depth + idx] != l2.key[depth + idx])
@@ -378,7 +406,6 @@ pub fn ArtTree(comptime T: type) type {
             dest.num_children = src.num_children;
             dest.partial_len = src.partial_len;
             mem.copy(u8, &dest.partial, src.partial[0..math.min(MaxPrefixLen, src.partial_len)]);
-            // log(.Verbose, "copyHeader dest num_children {} partial_len {} partaial {}", .{ dest.num_children, dest.partial_len, dest.partial });
         }
 
         /// Calculates the index at which the prefixes mismatch
@@ -398,12 +425,10 @@ pub fn ArtTree(comptime T: type) type {
                         return idx;
                 }
             }
-            warn("prefixMismatch idx {}\n", .{idx});
             return idx;
         }
         // Find the minimum Leaf under a node
         pub fn minimum(n: *Node) ?*Leaf {
-            // log(.Verbose, "minimum {}\n", .{n});
             return switch (n.*) {
                 .empty => null,
                 .leaf => &n.leaf,
@@ -442,27 +467,10 @@ pub fn ArtTree(comptime T: type) type {
             };
         }
 
-        fn addChild(t: *Tree, n: *Node, ref: **Node, c: u8, child: *Node) Error!void {
-            switch (n.*) {
-                .node4 => try t.addChild4(n, ref, c, child),
-                .node16 => try t.addChild16(n, ref, c, child),
-                .node48 => try t.addChild48(n, ref, c, child),
-                .node256 => try t.addChild256(n, ref, c, child),
-                else => unreachable,
-            }
-        }
         fn findChild(n: *Node, c: u8) **Node {
             const base = n.baseNode();
-            log("findChild '{c}'\n", .{c});
-            // displayNode(n);
-            // log("\n", .{});
-            // var dummy: u8 = 0;
-            // _ = showCb(n, @as(*c_void, &dummy), 0);
-
-            // log(.Warning, "findChild '{c}'\n", .{c});
             switch (n.*) {
                 .node4 => {
-                    // log("base.num_children {}\n", .{base.num_children});
                     var i: u8 = 0;
                     while (i < base.num_children) : (i += 1) {
                         if (n.node4.keys[i] == c) return &n.node4.children[i];
@@ -477,28 +485,34 @@ pub fn ArtTree(comptime T: type) type {
                     }
                     const mask = (@as(u17, 1) << @truncate(u5, base.num_children)) - 1;
                     bitfield &= mask;
-                    log("bitfield 0b{b}\n", .{bitfield});
-                    // if (bitfield != 0)
-                    //     log(.Warning, "Node16 child {}\n", .{n.node16.children[@ctz(usize, bitfield)]});
-
                     // end TODO
                     if (bitfield != 0) return &n.node16.children[@ctz(usize, bitfield)];
                 },
                 .node48 => {
-                    // log("Node48 '{c}'\n", .{n.node48.keys[c]});
-                    // if (n.node48.keys[c] > 0)
-                    //     log(.Warning, "Node48 '{}'\n", .{n.node48.children[n.node48.keys[c] - 1]});
                     const i = n.node48.keys[c];
                     if (i != 0) return &n.node48.children[i - 1];
                 },
                 .node256 => {
-                    // log("Node256 {*} has child '{c}' {}\n", .{ n.node256.children[c], c, n.node256.children[c] != &emptyNode });
-                    // no need to check if empty, just return because these are initialized to &emptyNode
-                    return &n.node256.children[c];
+                    // seems like it shouldn't be, but this check is necessary
+                    // removing it makes many things fail spectularly and mysteriously
+                    // i thought removing this check would be ok as all children are initialized to emptyNodeRef
+                    // but that is NOT the case...
+                    if (n.node256.children[c] != emptyNodeRef)
+                        return &n.node256.children[c];
                 },
                 else => unreachable,
             }
             return &emptyNodeRef;
+        }
+
+        fn addChild(t: *Tree, n: *Node, ref: **Node, c: u8, child: *Node) Error!void {
+            switch (n.*) {
+                .node4 => try t.addChild4(n, ref, c, child),
+                .node16 => try t.addChild16(n, ref, c, child),
+                .node48 => try t.addChild48(n, ref, c, child),
+                .node256 => try t.addChild256(n, ref, c, child),
+                else => unreachable,
+            }
         }
 
         fn addChild4(t: *Tree, n: *Node, ref: **Node, c: u8, child: *Node) !void {
@@ -507,30 +521,23 @@ pub fn ArtTree(comptime T: type) type {
                 while (idx < n.node4.num_children) : (idx += 1) {
                     if (c < n.node4.keys[idx]) break;
                 }
-
                 const shift_len = n.node4.num_children - idx;
                 mem.copyBackwards(u8, n.node4.keys[idx + 1 ..], n.node4.keys[idx..][0..shift_len]);
                 mem.copyBackwards(*Node, n.node4.children[idx + 1 ..], n.node4.children[idx..][0..shift_len]);
-                // _ = cstd.memmove(&n.node4.keys + idx + 1, &n.node4.keys + idx, shift_len);
-                // _ = cstd.memmove(&n.node4.children + idx + 1, &n.node4.children + idx, shift_len * @sizeOf(*Node));
                 n.node4.keys[idx] = c;
                 n.node4.children[idx] = child;
                 n.node4.num_children += 1;
-                warn("addChild4 idx {} shift_len {} num_children {}\n", .{ idx, shift_len, n.node4.num_children });
-                // log(.Verbose, "addChild4 n.node4.keys {} idx {} shift_len {} num_children {}\n", .{ n.node4.keys, idx, shift_len, n.node4.num_children });
             } else {
                 var new_node = try t.allocNode(.node16);
                 mem.copy(*Node, &new_node.node16.children, &n.node4.children);
                 mem.copy(u8, &new_node.node16.keys, &n.node4.keys);
                 copyHeader(new_node.node16.baseNode(), n.node4.baseNode());
-                // log(.Verbose, "new_node.node16.keys {}\n", .{new_node.node16.keys});
                 ref.* = new_node;
                 t.a.destroy(n);
                 try t.addChild16(new_node, ref, c, child);
             }
         }
         fn addChild16(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
-            // log(.Verbose, "addChild16 n {}\n", .{n});
             if (n.node16.num_children < 16) {
                 // TODO: implement with simd
                 const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
@@ -550,7 +557,6 @@ pub fn ArtTree(comptime T: type) type {
                     mem.copyBackwards(u8, n.node16.keys[idx + 1 ..], n.node16.keys[idx..][0..shift_len]);
                     mem.copyBackwards(*Node, n.node16.children[idx + 1 ..], n.node16.children[idx..][0..shift_len]);
                 } else idx = n.node16.num_children;
-                // log(.Verbose, "n.node16.keys {}\n", .{n.node16.keys});
 
                 n.node16.keys[idx] = c;
                 n.node16.children[idx] = child;
@@ -558,18 +564,11 @@ pub fn ArtTree(comptime T: type) type {
             } else {
                 var newNode = try t.allocNode(.node48);
                 mem.copy(*Node, &newNode.node48.children, &n.node16.children);
-                // mem.copy(u8, &newNode.node48.keys, &n.node4.keys);
                 const base = n.baseNode();
                 var i: u8 = 0;
-                while (i < base.num_children) : (i += 1) {
+                while (i < base.num_children) : (i += 1)
                     newNode.node48.keys[n.node16.keys[i]] = i + 1;
-                    // log(.Verbose, "i {} n.node16.keys[i] {} newNode.node48.keys[n.node16.keys[i]] {}\n", .{ i, n.node16.keys[i], newNode.node48.keys[n.node16.keys[i]] });
-                }
                 copyHeader(newNode.baseNode(), base);
-                // log(.Verbose, "newNode.node48.keys: ", .{});
-                // for (newNode.node48.keys) |k|
-                //     log(.Verbose, "{},", .{k});
-                // log(.Verbose, "\n", .{});
                 ref.* = newNode;
                 t.a.destroy(n);
                 try t.addChild48(newNode, ref, c, child);
@@ -579,14 +578,6 @@ pub fn ArtTree(comptime T: type) type {
             if (n.node48.num_children < 48) {
                 var pos: u8 = 0;
                 while (n.node48.children[pos] != &emptyNode) : (pos += 1) {}
-                warn("addChild48 pos {}", .{pos});
-                // const shiftLen = n.node48.num_children - pos;
-                // log(.Verbose, "pos {} keys {} \n", .{ pos, n.node48.keys });
-                // log(.Verbose, "n {}\n", .{n});
-                // log(.Verbose, "child {}\n", .{child});
-                // shift forward to make room
-                // mem.copyBackwards(u8, n.node48.keys[pos + 1 ..], n.node48.keys[pos..][0..shiftLen]);
-                // mem.copyBackwards(*Node, n.node48.children[pos + 1 ..], n.node48.children[pos..][0..shiftLen]);
                 n.node48.children[pos] = child;
                 n.node48.keys[c] = pos + 1;
                 n.node48.num_children += 1;
@@ -595,12 +586,9 @@ pub fn ArtTree(comptime T: type) type {
                 var i: usize = 0;
                 const old_children = n.node48.children;
                 const old_keys = n.node48.keys;
-                // log(.Verbose, "oldkeys {}\n", .{old_keys});
                 while (i < 256) : (i += 1) {
-                    if (old_keys[i] != 0) {
-                        // log(.Verbose, "old_keys[{}] {}\n", .{ i, old_keys[i] });
+                    if (old_keys[i] != 0)
                         newNode.node256.children[i] = old_children[old_keys[i] - 1];
-                    }
                 }
                 copyHeader(newNode.baseNode(), n.baseNode());
                 ref.* = newNode;
@@ -612,11 +600,6 @@ pub fn ArtTree(comptime T: type) type {
             n.node256.num_children += 1;
             n.node256.children[c] = child;
         }
-
-        fn keysMatch(leaf_key: []const u8, key: []const u8) bool {
-            return std.mem.eql(u8, leaf_key, key);
-        }
-
         fn checkPrefix(n: *BaseNode, key: []const u8, depth: usize) usize {
             const max_cmp = math.min(math.min(n.partial_len, MaxPrefixLen), key.len - depth);
             var idx: usize = 0;
@@ -631,40 +614,10 @@ pub fn ArtTree(comptime T: type) type {
             switch (n.*) {
                 .empty => {},
                 .leaf => return cb(n, data, depth),
-                .node4 => {
-                    if (cb(n, data, depth)) return true;
-                    var i: usize = 0;
-                    // log(.Verbose, "{*}\n", .{n});
-                    // log(.Verbose, "{}\n", .{n});
-                    while (i < n.node4.num_children) : (i += 1) {
-                        if (t.recursiveIter(n.node4.children[i], data, depth + 1, cb))
-                            return true;
-                    }
-                },
-                .node16 => {
-                    if (cb(n, data, depth)) return true;
-                    var i: usize = 0;
-                    while (i < n.node16.num_children) : (i += 1) {
-                        if (t.recursiveIter(n.node16.children[i], data, depth + 1, cb))
-                            return true;
-                    }
-                },
-                .node48 => {
-                    if (cb(n, data, depth)) return true;
-                    var i: usize = 0;
-                    while (i < 256) : (i += 1) {
-                        const idx = n.node48.keys[i];
-                        if (idx == 0) continue;
-                        if (t.recursiveIter(n.node48.children[idx - 1], data, depth + 1, cb))
-                            return true;
-                    }
-                },
-                .node256 => {
-                    if (cb(n, data, depth)) return true;
-                    var i: usize = 0;
-                    while (i < 256) : (i += 1) {
-                        if (n.node256.children[i] == &emptyNode) continue;
-                        if (t.recursiveIter(n.node256.children[i], data, depth + 1, cb))
+                .node4, .node16, .node48, .node256 => {
+                    var ci = n.childIterator();
+                    while (ci.next()) |child| {
+                        if (t.recursiveIter(child, data, depth + 1, cb))
                             return true;
                     }
                 },
@@ -680,16 +633,12 @@ pub fn ArtTree(comptime T: type) type {
                 .node4 => warn("{}4   [{}] ({}) {} children\n", .{
                     spaces[0 .. depth * 2],
                     &n.node4.keys,
-                    // n.node4.keys[0..n.node4.num_children],
-                    // &n.node4.partial,
                     n.node4.partial[0..math.min(MaxPrefixLen, n.node4.partial_len)],
                     n.node4.num_children,
                 }),
                 .node16 => warn("{}16  [{}] ({}) {} children\n", .{
                     spaces[0 .. depth * 2],
                     n.node16.keys,
-                    // n.node16.keys[0..n.node16.num_children],
-                    // n.node16.partial,
                     n.node16.partial[0..math.min(MaxPrefixLen, n.node16.partial_len)],
                     n.node16.num_children,
                 }),
@@ -700,12 +649,6 @@ pub fn ArtTree(comptime T: type) type {
                             warn("{c}", .{@truncate(u8, i)});
                     }
                     warn("] ({}) {} children\n", .{ nn.partial, n.node48.num_children });
-                    // warn("{}48-{} ({})\n", .{
-                    // spaces[0 .. depth * 2],
-                    // // n.node48.keys[0..n.node48.num_children],
-                    // // n.node48.partial[0..n.node48.partial_len],
-                    // n.node48.keys,
-                    // n.node48.partial,
                 },
                 .node256 => |nn| {
                     warn("{}256 [", .{spaces[0 .. depth * 2]});
@@ -719,65 +662,14 @@ pub fn ArtTree(comptime T: type) type {
             return false;
         }
 
-        fn showCbStream(n: *Node, data: *c_void, depth: usize) bool {
-            const Stream = *@TypeOf(std.io.getStdErr().outStream());
-
-            var stream = @ptrCast(Stream, @alignCast(@alignOf(Stream), data));
-            switch (n.*) {
-                .leaf => _ = stream.print("{} -> {} = {}\n", .{ spaces[0 .. depth * 2], n.leaf.key, n.leaf.value }) catch unreachable,
-                .node4 => _ = stream.print("{}4 [{}] ({})\n", .{
-                    spaces[0 .. depth * 2],
-                    &n.node4.keys,
-                    // n.node4.keys[0..n.node4.num_children],
-                    // &n.node4.partial,
-                    n.node4.partial[0..math.min(MaxPrefixLen, n.node4.partial_len)],
-                }) catch unreachable,
-                .node16 => _ = stream.print("{}16 [{}] ({})\n", .{
-                    spaces[0 .. depth * 2],
-                    n.node16.keys,
-                    // n.node16.keys[0..n.node16.num_children],
-                    // n.node16.partial,
-                    n.node16.partial[0..math.min(MaxPrefixLen, n.node16.partial_len)],
-                }) catch unreachable,
-                .node48 => |nn| {
-                    _ = stream.print("{}48 [", .{spaces[0 .. depth * 2]}) catch unreachable;
-                    for (nn.keys) |c, i| {
-                        if (c != 0)
-                            _ = stream.print("{c}", .{@truncate(u8, i)}) catch unreachable;
-                    }
-                    _ = stream.print("] ({})\n", .{nn.partial}) catch unreachable;
-                    // _ = stream.print("{}48-{} ({})\n", .{
-                    // spaces[0 .. depth * 2],
-                    // // n.node48.keys[0..n.node48.num_children],
-                    // // n.node48.partial[0..n.node48.partial_len],
-                    // n.node48.keys,
-                    // n.node48.partial,
-                },
-                .node256 => |nn| {
-                    _ = stream.print("{}256 [", .{spaces[0 .. depth * 2]}) catch unreachable;
-                    for (nn.children) |child, i| {
-                        if (child != &emptyNode)
-                            _ = stream.print("{c}", .{@truncate(u8, i)}) catch unreachable;
-                    }
-                    _ = stream.print("] ({})\n", .{
-                        nn.partial,
-                    }) catch unreachable;
-                },
-            }
-            return false;
-        }
-
         fn recursiveDelete(t: *Tree, n: *Node, ref: **Node, key: []const u8, _depth: usize) Error!Result {
             var depth = _depth;
             if (n == emptyNodeRef) return .missing;
             if (n.* == .leaf) {
                 const l = n.*.leaf;
                 if (mem.eql(u8, n.*.leaf.key, key)) {
-                    // t.deinitNode(n);
-                    log("1 found leaf to delete {}\n", .{l});
                     const result = Result{ .found = l.value };
-                    // t.a.free(n.*.leaf.key);
-                    // t.a.destroy(n);
+                    t.deinitNode(n);
                     ref.* = emptyNodeRef;
                     return result;
                 }
@@ -794,14 +686,9 @@ pub fn ArtTree(comptime T: type) type {
             const child = findChild(n, key[depth]);
             if (child == &emptyNodeRef) return .missing;
             const childp = child.*;
-            log("checking ", .{});
-            displayNode(childp, 0);
-            displayChildren(childp, 0);
-            log("\n", .{});
             if (childp.* == .leaf) {
                 const l = childp.*.leaf;
                 if (mem.eql(u8, l.key, key)) {
-                    log("2 found leaf to delete {}\n", .{l});
                     try t.removeChild(n, ref, key[depth], child);
                     return Result{ .found = l.value };
                 }
@@ -818,22 +705,15 @@ pub fn ArtTree(comptime T: type) type {
             }
         }
         fn removeChild4(t: *Tree, n: *Node, ref: **Node, l: **Node) void {
-            // std.debug.warn("removeChild4 l {*} &children {*}\n", .{ l, &n.node4.children });
             const pos = (@ptrToInt(l) - @ptrToInt(&n.node4.children)) / 8;
             std.debug.assert(0 <= pos and pos < 4);
             t.deinitNode(n.node4.children[pos]);
             const base = n.baseNode();
-            // const shift_len = base.num_children - 1 - pos;
-            // @memcpy(n.node4.keys[pos..].ptr, n.node4.keys[pos + 1 ..].ptr, shift_len);
-            // const shift_len = math.min(base.num_children, 4-(pos + 1));
-            // const shift_len = base.num_children - (pos+1);
             mem.copy(u8, n.node4.keys[pos..], n.node4.keys[pos + 1 ..]); //[0..shift_len]);
-            // @memcpy(@ptrCast([*]u8, n.node4.children[pos..].ptr), @ptrCast([*]u8, n.node4.children[pos + 1 ..].ptr), @sizeOf(*Node) * shift_len); //[0..shift_len]);
             mem.copy(*Node, n.node4.children[pos..], n.node4.children[pos + 1 ..]);
             base.num_children -= 1;
             n.node4.keys[base.num_children] = 0;
             n.node4.children[base.num_children] = emptyNodeRef;
-            log("removeChild4 new keys {s} pos {} num_children {}\n", .{ n.node4.keys[0..], pos, base.num_children });
             // Remove nodes with only a single child
             if (base.num_children == 1) {
                 const child = n.node4.children[0];
@@ -857,32 +737,21 @@ pub fn ArtTree(comptime T: type) type {
                 t.a.destroy(n);
             }
         }
-        // const cstr = @cImport({
-        //     @cInclude("string.h");
-        // });
         fn removeChild16(t: *Tree, n: *Node, ref: **Node, l: **Node) Error!void {
             const pos = (@ptrToInt(l) - @ptrToInt(&n.node16.children)) / 8;
             std.debug.assert(0 <= pos and pos < 16);
             t.deinitNode(n.node16.children[pos]);
             const base = n.baseNode();
-            // const shift_len = base.num_children - 1 - pos;
-            // @memcpy(n.node16.keys[pos..].ptr, n.node16.keys[pos + 1 ..].ptr, shift_len);
-            // @memcpy(@ptrCast([*]u8, n.node16.children[pos..].ptr), @ptrCast([*]u8, n.node16.children[pos + 1 ..].ptr), @sizeOf(*Node) * shift_len);
-            log("removeChild16 old keys {s} pos {} num_children {}\n", .{ n.node16.keys[0..], pos, base.num_children });
             mem.copy(u8, n.node16.keys[pos..], n.node16.keys[pos + 1 ..]);
             mem.copy(*Node, n.node16.children[pos..], n.node16.children[pos + 1 ..]);
             base.num_children -= 1;
             n.node16.keys[base.num_children] = 0;
             n.node16.children[base.num_children] = emptyNodeRef;
-            // _ = cstr.memmove(@ptrCast(*c_void, n.node16.keys[pos..].ptr), @ptrCast(*c_void, n.node16.keys[pos + 1 ..].ptr), base.num_children - 1 - pos);
-            // _ = cstr.memmove(@ptrCast(*c_void, n.node16.children[pos..].ptr), @ptrCast(*c_void, n.node16.children[pos + 1 ..].ptr), (base.num_children - 1 - pos) * @sizeOf(*Node));
-            log("removeChild16 new keys {s} pos {} num_children {}\n", .{ n.node16.keys[0..], pos, base.num_children });
             if (base.num_children == 3) {
                 const new_node = try t.allocNode(.node4);
                 ref.* = new_node;
                 copyHeader(new_node.baseNode(), base);
                 mem.copy(u8, &new_node.node4.keys, n.node16.keys[0..3]);
-                log("new_node.keys {}\n", .{new_node.node4.keys[0..]});
                 mem.copy(*Node, &new_node.node4.children, n.node16.children[0..3]);
                 t.a.destroy(n);
             }
@@ -902,7 +771,7 @@ pub fn ArtTree(comptime T: type) type {
 
                 var childi: u8 = 0;
                 var i: u8 = 0;
-                while (childi < 12) : (i += 1) {
+                while (true) : (i += 1) {
                     pos = n.node48.keys[i];
                     if (pos != 0) {
                         new_node.node16.keys[childi] = i;
@@ -929,7 +798,7 @@ pub fn ArtTree(comptime T: type) type {
 
                 var pos: u8 = 0;
                 var i: u8 = 0;
-                while (pos < 37) : (i += 1) {
+                while (true) : (i += 1) {
                     if (n.node256.children[i] != emptyNodeRef) {
                         new_node.node48.children[pos] = n.node256.children[i];
                         new_node.node48.keys[i] = pos + 1;
@@ -941,4 +810,51 @@ pub fn ArtTree(comptime T: type) type {
             }
         }
     };
+}
+
+pub fn main() !void {
+    var t = ArtTree(usize).init(std.heap.c_allocator);
+    const stdin = std.io.getStdIn().inStream();
+    var buf: [256]u8 = undefined;
+    while (try stdin.readUntilDelimiterOrEof(&buf, '\n')) |input| {
+        // std.debug.warn("{}\n", .{input});
+        var parts: [2][]const u8 = undefined;
+        if (std.mem.eql(u8, input, ":q")) {
+            break;
+        } else if (std.mem.eql(u8, input, ":r")) {
+            t.deinit();
+            t = ArtTree(usize).init(std.heap.c_allocator);
+            continue;
+        }
+        var itr = std.mem.split(input, " ");
+        var i: u8 = 0;
+        var delete = false;
+        while (itr.next()) |part| : (i += 1) {
+            if (i == 0 and part.len > 1 and std.mem.eql(u8, "d:", part[0..2])) {
+                delete = true;
+                parts[i] = part[2..];
+            } else parts[i] = part;
+        }
+        var res: ?ArtTree(usize).Result = null;
+        var buf2: [256]u8 = undefined;
+        var key = try std.fmt.bufPrint(&buf2, "{}\x00", .{parts[0]});
+        if (delete) {
+            res = try t.delete(key);
+        } else {
+            if (i == 1) {
+                res = try t.insert(key, t.size);
+            } else if (i == 2) {
+                const n = try std.fmt.parseInt(usize, parts[1], 10);
+                res = try t.insert(key, n);
+            } else
+                std.debug.warn("invalid input '{}'\nprovide a key or space separated key and value\n", .{input});
+        }
+        if (res) |result| {
+            var ouput: []const u8 = if (result == .missing) "new"[0..] else "updated"[0..];
+            std.debug.warn("{} size {}\n", .{ ouput, t.size });
+            showLog = true;
+            try t.print();
+            showLog = false;
+        }
+    }
 }

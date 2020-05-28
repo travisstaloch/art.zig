@@ -6,8 +6,8 @@ const log = art.log;
 
 const tal = std.testing.allocator;
 const cal = std.heap.c_allocator;
-const TestManyTypes = false;
-const Types = if (TestManyTypes) [_]type{ u8, u16, u32, u64, usize, f32, f64, bool, [24]u8, [3]usize } else [_]type{usize};
+const TestAllTypes = false;
+const Types = if (TestAllTypes) [_]type{ u8, u16, u32, u64, usize, f32, f64, bool, [24]u8, [3]usize } else [_]type{usize};
 fn valAsType(comptime T: type, i: usize) T {
     return switch (@typeInfo(T)) {
         .Int => @truncate(T, i),
@@ -42,12 +42,11 @@ test "basic" {
 test "insert many keys" {
     inline for (Types) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = ArtTree(T).init(&lca.allocator);
+        var t = ArtTree(T).init(lca.internal_allocator);
+        defer t.deinit();
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
         defer f.close();
-        // log("{}\n", .{@typeName(T)});
-        // const lines_to_read = 200000;
         var linei: usize = 1;
         const stream = &f.inStream();
         var buf: [256]u8 = undefined;
@@ -55,85 +54,48 @@ test "insert many keys" {
             buf[line.len] = 0;
             line.len += 1;
             const result = try t.insert(line.*, valAsType(T, linei));
-            // log(.Verbose, "line {} result {}\n", .{ line, result });
-            // try t.print();
-            // log(.Verbose, "\n", .{});
-            // if (linei == lines_to_read) break;
             linei += 1;
         }
         testing.expectEqual(t.size, linei - 1);
 
-        t.deinit();
         try lca.validate();
     }
-    // try t.print();
 }
 
 test "insert and delete many" {
-    // var t = ArtTree(usize).init(cal);
     inline for (Types) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = ArtTree(T).init(&lca.allocator);
-        log("{}\n", .{@typeName(T)});
+        var t = ArtTree(T).init(lca.internal_allocator);
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
         defer f.close();
 
-        const lines_to_read = 300;
         var linei: usize = 1;
         const stream = &f.inStream();
         var buf: [256]u8 = undefined;
         while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
             buf[line.len] = 0;
-            buf[line.len + 1] = 0;
             line.len += 1;
             const result = try t.insert(line.*, valAsType(T, linei));
-            // log(.Verbose, "line {} result {}\n", .{ line, result });
-            // try t.print();
-            // log(.Verbose, "\n", .{});
-            if (linei == lines_to_read) break;
             linei += 1;
         }
         const nlines = linei;
-        testing.expectEqual(t.size, lines_to_read);
-        // art.showLog = true;
-        // try t.print();
-        // art.showLog = false;
+        testing.expectEqual(t.size, linei - 1);
         _ = try f.seekTo(0);
-        // delete each line
+
         linei = 1;
         while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
             buf[line.len] = 0;
             line.len += 1;
             const result = try t.delete(line.*);
-            if (result != .found) {
-                const tmp = art.showLog;
-                art.showLog = true;
-                log("\nexpected to find {}. result {}\n", .{ line.*, t.delete(line.*) });
-                try t.print();
-                art.showLog = tmp;
-            }
+
             testing.expect(result == .found);
             testing.expectEqual(result.found, valAsType(T, linei));
-            testing.expectEqual(t.size, nlines - linei);
-            if (false) {
-                // if (linei > lines_to_read - 10) {
-                // if (true) {
-                art.showLog = true;
-                art.log("\n\n deleted {}\n", .{line.*});
-                try t.print();
-                art.showLog = false;
-            }
-            if (linei == lines_to_read) break;
+            testing.expectEqual(t.size, nlines - linei - 1);
             linei += 1;
         }
         testing.expectEqual(t.size, 0);
-        art.showLog = true;
-        try t.print();
-        art.showLog = false;
-        t.deinit();
-        // TODO turn this back on and find out why ther are 2 leaks
-        // try lca.validate();
+        try lca.validate();
     }
 }
 const testing = std.testing;
@@ -309,11 +271,10 @@ test "insert very long key" {
 const UsizeTree = ArtTree(usize);
 
 test "insert search" {
-    // var t = ArtTree(usize).init(cal);
-    // defer t.deinit();
     inline for (Types) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = ArtTree(T).init(&lca.allocator);
+        var t = ArtTree(T).init(lca.internal_allocator);
+        defer t.deinit();
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
         defer f.close();
@@ -324,16 +285,11 @@ test "insert search" {
         while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
             buf[line.len] = 0;
             line.len += 1;
-            // log("{}:inserting {}\n", .{ linei, line.* });
             const result = try t.insert(line.*, valAsType(T, linei));
             linei += 1;
-            if (linei == 235886) {
-                log("", .{});
-            }
         }
         // Seek back to the start
         _ = try f.seekTo(0);
-        // art.showLog = true;
 
         // Search for each line
         linei = 1;
@@ -341,16 +297,9 @@ test "insert search" {
             buf[line.len] = 0;
             line.len += 1;
             const result = t.search(line.*);
-            if (result != .found) {
-                const tmp = art.showLog;
-                art.showLog = true;
-                log("{} {}\n", .{ line, t.search(line.*) });
-                art.showLog = tmp;
-            }
             testing.expect(result == .found);
             testing.expectEqual(result.found, valAsType(T, linei));
             linei += 1;
-            // break;
         }
 
         // Check the minimum
@@ -360,7 +309,6 @@ test "insert search" {
         // Check the maximum
         l = ArtTree(T).maximum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "zythum\x00");
-        t.deinit();
         try lca.validate();
     }
 }
@@ -373,49 +321,13 @@ fn sizeCb(n: *UsizeTree.Node, data: *c_void, depth: usize) bool {
     return false;
 }
 
-// fn displayNodeChildren(n: *UsizeTree.Node) void {
-//     // if (depth == 3) return true;
-//     // return ArtTree(usize).showCb(n, data, depth);
-//     // UsizeTree.displayNode(n);
-//     switch (n.*) {
-//         .node4 => {
-//             var i: u8 = 0;
-//             while (i < n.node4.num_children) : (i += 1) {
-//                 UsizeTree.displayNode(n.node4.children[i]);
-//             }
-//         },
-//         .node16 => {
-//             var i: u8 = 0;
-//             while (i < n.node16.num_children) : (i += 1) {
-//                 UsizeTree.displayNode(n.node16.children[i]);
-//             }
-//         },
-//         .node48 => {
-//             var i: usize = 0;
-//             while (i < 256) : (i += 1) {
-//                 const idx = n.node48.keys[i];
-//                 if (idx == 0)
-//                     continue;
-//                 UsizeTree.displayNode(n.node48.children[idx - 1]);
-//             }
-//         },
-//         .node256 => {
-//             // unreachable;
-//             var i: usize = 0;
-//             while (i < 256) : (i += 1) {
-//                 if (n.node256.children[i] != &UsizeTree.emptyNode)
-//                     UsizeTree.displayNode(n.node256.children[i]);
-//             }
-//         },
-//         else => {},
-//     }
-// }
-
 test "insert search delete" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = ArtTree(usize).init(&lca.allocator);
+    var t = ArtTree(usize).init(lca.internal_allocator);
+    defer t.deinit();
+    const filename = "./testdata/words.txt";
 
-    const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
+    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
     defer f.close();
 
     var linei: usize = 1;
@@ -426,81 +338,91 @@ test "insert search delete" {
         line.len += 1;
         const result = try t.insert(line.*, linei);
         linei += 1;
-        if (linei == 235886) {
-            log("", .{});
-        }
     }
     const nlines = linei - 1;
     // Seek back to the start
     _ = try f.seekTo(0);
-    // art.showLog = true;
     // Search for each line
     linei = 1;
     var first_char: u8 = 0;
-    // const stop_line = 197141;
-    const stop_line = 233882;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
         buf[line.len] = 0;
         line.len += 1;
-        // log("\nline {}\n", .{line.*});
         const result = t.search(line.*);
-        if (result != .found) {
-            const tmp = art.showLog;
-            art.showLog = true;
-            // try t.print();
-            log("{} {}\n", .{ linei, line.* });
-            log("\nexpected to find {}. result {}\n", .{ line.*, t.search(line.*) });
-            art.showLog = tmp;
-        }
         testing.expect(result == .found);
         testing.expectEqual(result.found, linei);
 
-        if (linei >= stop_line - 1)
-            art.showLog = true;
+        const result2 = try t.delete(line.*);
+        testing.expect(result2 == .found);
+        testing.expectEqual(result2.found, linei);
+        const expected_size = nlines - linei;
+        testing.expectEqual(expected_size, t.size);
+        linei += 1;
+    }
 
-        // const c = std.ascii.toLower(line.*[0]);
-        // if (first_char != c) {
-        //     first_char = c;
-        //     log("{c}\n", .{first_char});
-        // }
-        log("delete {}\n", .{line.*});
+    // // Check the minimum
+    var l = UsizeTree.minimum(t.root);
+    testing.expectEqual(l, null);
+
+    // // Check the maximum
+    l = UsizeTree.maximum(t.root);
+    testing.expectEqual(l, null);
+
+    try lca.validate();
+}
+
+test "insert search delete 2" {
+    var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
+    const al = lca.internal_allocator;
+    var t = ArtTree(usize).init(al);
+    defer t.deinit();
+    const data = [_][]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
+    const joined = try std.mem.join(al, "\x00\n", &data);
+    defer al.free(joined);
+    var f = std.io.fixedBufferStream(joined);
+
+    var linei: usize = 1;
+    const stream = &f.inStream();
+    var buf: [512:0]u8 = undefined;
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        const result = try t.insert(line.*, linei);
+        linei += 1;
+    }
+    const nlines = linei - 1;
+    // Seek back to the start
+    _ = try f.seekTo(0);
+    // Search for each line
+    linei = 1;
+    var first_char: u8 = 0;
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        const result = t.search(line.*);
+        testing.expect(result == .found);
+        testing.expectEqual(result.found, linei);
+
         const result2 = try t.delete(line.*);
         testing.expect(result2 == .found);
         testing.expectEqual(result2.found, linei);
         const expected_size = nlines - linei;
         testing.expectEqual(expected_size, t.size);
 
-        if (linei >= stop_line - 1) {
-            // log("\n", .{});
-            art.showLog = true;
-            // try t.print();
-            // log("root ", .{});
-            log("---------\nafter delete\n", .{});
-            log("t.size {} linei {}\n", .{ t.size, linei });
-            _ = UsizeTree.displayNode(t.root, 0);
-            UsizeTree.displayChildren(t.root, 0);
-            // _ = t.iter(show2Cb, &linei);
-            // log("---------\n", .{});
-            // break;
-        }
-        if (linei == stop_line + 1) break;
-        // var iter_size: usize = 0;
-        // _ = t.iter(sizeCb, &iter_size);
-        // if (expected_size != iter_size) {
-        //     _ = try t.print();
-        //     log("failed on {} {}\n", .{ linei, line.* });
-        // }
-        // testing.expectEqual(expected_size, iter_size);
+        var iter_size: usize = 0;
+        _ = t.iter(sizeCb, &iter_size);
+        testing.expectEqual(expected_size, iter_size);
+
         linei += 1;
     }
 
     // // Check the minimum
-    // var l = UsizeTree.minimum(t.root);
-    // testing.expectEqual(l, null);
+    var l = UsizeTree.minimum(t.root);
+    testing.expectEqual(l, null);
 
     // // Check the maximum
-    // l = UsizeTree.maximum(t.root);
-    // testing.expectEqual(l, null);
-    t.deinit();
+    l = UsizeTree.maximum(t.root);
+    testing.expectEqual(l, null);
+
     try lca.validate();
 }

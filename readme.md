@@ -12,8 +12,9 @@ $ diff --text -y testdata/c.txt testdata/z.txt  | kak
 ```
 
 # Todo
-- [] Deletion
-  - [] test_art "insert search delete" test has revealed a bug in deletion. trying to figure out what node type is has the bug. 
+- [x] Deletion
+  - [x] test_art "insert search delete" test has revealed a bug in deletion. trying to figure out what node type is has the bug.
+- [] figure out whats wrong with iterPrefix, reenable tests.
 - [] Port more tests and move tests to another file. 
 - [] Add print to stream.
 - [] Rethink the callback signature.  I'm wondering if using `data: *c_void` param is leading to or related to the failed iter_prefix tests. 
@@ -21,6 +22,14 @@ $ diff --text -y testdata/c.txt testdata/z.txt  | kak
 - [] Save space by
   - [] Chop off null terminator in leaves.
   - [] Don't store whole key in leaves. 
+  - [] Don't allocate the keys, only store pointers.
 - [] build.zig
 - [] Clean up the mess. 
 - [] Benchmark against StringHashMap
+- [] Add a simple repl.
+  - [] write usage
+    - :q - quit
+    - key - adds 'key' with value = t.size
+    - key number - adds key with value = parse(number)
+    - d:key - deletes key
+    - :r - reset (deinit/init) the tree
