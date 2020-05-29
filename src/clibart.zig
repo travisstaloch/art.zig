@@ -1,7 +1,10 @@
+// zig test src/clibart.zig --c-source libartc/src/art.c -I/usr/include/ -I/usr/include/x86_64-linux-gnu/ -lc -I libartc/src -I. -DLANG="'z'"
+
 const std = @import("std");
 const artc = @cImport({
     @cInclude("art.h");
 });
+
 const clibart = @cImport({
     @cInclude("src/clibart.c");
 });
@@ -9,9 +12,6 @@ extern var show_debug: c_int;
 
 const art = @import("art.zig");
 const ArtTree = art.ArtTree;
-// const a = testing.allocator;
-// var arena = std.heap.ArenaAllocator.init(testing.allocator);
-// var a = &arena.allocator;
 const testing = std.testing;
 const a = std.heap.c_allocator;
 
@@ -24,6 +24,7 @@ const lang = switch (clibart.LANG) {
     else => unreachable,
 };
 const UTree = ArtTree(usize);
+
 test "compare node keys" {
     var t: artc.art_tree = undefined;
     _ = artc.art_tree_init(&t);
@@ -44,9 +45,6 @@ test "compare node keys" {
         // if (i > stop_line) break;
         buf[line.len] = 0;
         line.len += 1;
-        if (linei == stop_line) {
-            std.debug.warn("", .{});
-        }
         if (lang == .c or lang == .both) {
             // this prevents all inserted values from pointing to the same value
             // TODO fix leak
@@ -69,12 +67,13 @@ test "compare node keys" {
     }
 }
 
+// this is used to compare against output from the original c version of libart
 test "compare tree after delete" {
     var t: artc.art_tree = undefined;
     _ = artc.art_tree_init(&t);
     defer _ = artc.art_tree_destroy(&t);
     var ta = ArtTree(usize).init(a);
-    // defer ta.deinit();
+    defer ta.deinit();
 
     const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
     defer f.close();
