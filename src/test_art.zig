@@ -542,3 +542,47 @@ test "display children" {
         UsizeTree.displayChildren(t.root, 0);
     }
 }
+
+const CustomType = struct { a: f32, b: struct { c: bool } };
+const U = union(enum) { a, b };
+const IterTypes = [_]type{ u8, u16, i32, bool, f32, f64, @Vector(10, u8), [10]u8, CustomType, U, [10]*u32, *u16, *isize };
+fn defaultFor(comptime T: type) T {
+    const ti = @typeInfo(T);
+    return switch (ti) {
+        .Void => {},
+        .Int, .Float => 42,
+        .Pointer => blk: {
+            var x: ti.Pointer.child = 42;
+            var y = @as(ti.Pointer.child, x);
+            break :blk &y;
+        },
+        .Bool => true,
+        .Array => [1]ti.Array.child{defaultFor(ti.Array.child)} ** ti.Array.len,
+        .Vector => [1]ti.Vector.child{defaultFor(ti.Vector.child)} ** ti.Vector.len,
+        .Struct => switch (T) {
+            CustomType => .{ .a = 42, .b = .{ .c = true } },
+            else => @compileLog(ti),
+        },
+        .Union => switch (T) {
+            U => .a,
+            else => @compileLog(ti),
+        },
+        else => @compileLog(ti),
+    };
+}
+fn cb(node: var, data: var, depth: usize) bool {
+    art.log("{}: {}\n", .{ @typeName(@TypeOf(data)), data });
+    const ti = @typeInfo(@TypeOf(data));
+    if (ti != .Pointer)
+        testing.expectEqual(defaultFor(@TypeOf(data)), data);
+    return false;
+}
+test "iter data types" {
+    inline for (IterTypes) |T| {
+        var t = ArtTree(usize).init(tal);
+        defer t.deinit();
+        _ = try t.insert("A\x00", 0);
+        // art.showLog = true;
+        _ = t.iter(cb, defaultFor(T));
+    }
+}
