@@ -81,25 +81,23 @@ pub fn Art(comptime T: type) type {
                         },
                         .node48 => blk: {
                             if (self.i == 256) break :blk emptyNodeRef;
-                            var i: u9 = self.i;
-                            defer self.i = i + 1;
-                            while (true) : (i += 1) {
-                                const idx = self.parent.node48.keys[i];
+                            defer self.i += 1;
+                            while (true) : (self.i += 1) {
+                                const idx = self.parent.node48.keys[self.i];
                                 if (idx != 0)
                                     break :blk self.parent.node48.children[idx - 1];
-                                if (i == 255) break;
+                                if (self.i == 255) break;
                             }
                             break :blk emptyNodeRef;
                         },
                         .node256 => blk: {
                             if (self.i == 256) break :blk emptyNodeRef;
-                            var i: u9 = self.i;
-                            defer self.i = i + 1;
-                            while (true) : (i += 1) {
-                                if (self.parent.node256.children[i] != emptyNodeRef) {
-                                    break :blk self.parent.node256.children[i];
+                            defer self.i += 1;
+                            while (true) : (self.i += 1) {
+                                if (self.parent.node256.children[self.i] != emptyNodeRef) {
+                                    break :blk self.parent.node256.children[self.i];
                                 }
-                                if (i == 255) break;
+                                if (self.i == 255) break;
                             }
                             break :blk emptyNodeRef;
                         },
@@ -136,14 +134,13 @@ pub fn Art(comptime T: type) type {
         pub fn printToStream(t: *Tree, stream: var) !void {
             _ = t.iter(showCb, stream);
         }
-        pub fn displayNode(n: *Node, depth: usize) void {
-            const stderr = std.io.getStdErr().outStream();
-            _ = showCb(n, stderr, depth);
+        pub fn displayNode(stream: var, n: *Node, depth: usize) void {
+            _ = showCb(n, stream, depth);
         }
-        pub fn displayChildren(n: *Node, depth: usize) void {
+        pub fn displayChildren(stream: var, n: *Node, depth: usize) void {
             var it = n.childIterator();
             while (it.next()) |child| {
-                displayNode(child, depth + 1);
+                displayNode(stream, child, depth + 1);
             }
         }
         pub fn delete(t: *Tree, key: []const u8) Error!Result {
@@ -580,7 +577,7 @@ pub fn Art(comptime T: type) type {
         pub fn showCb(n: *Node, data: var, depth: usize) bool {
             const streamPrint = struct {
                 fn _(stream: var, comptime fmt: []const u8, args: var) void {
-                    stream.print(fmt, args) catch unreachable;
+                    _ = stream.print(fmt, args) catch unreachable;
                 }
             }._;
 

@@ -3,10 +3,10 @@
   - [x] test_art "insert search delete" test has revealed a bug in deletion. trying to figure out what node type is has the bug.
 - [x] figure out whats wrong with iterPrefix, reenable tests.
 - [x] Port more tests and move tests to another file. 
-- [] Add print to stream.
+- [x] Add print to stream.
 - [x] Rethink the callback signature.  I'm wondering if using `data: *c_void` param is leading to or related to the failed iter_prefix tests. 
   - [x] use var rather than *c_void.
-- [] iter which doesn't visit non-leaf nodes.
+- [x] iter shouldn't visit non-leaf nodes.
 - [x] make use of childIterator() where possible.
 - [x] rename ArtTree -> Art
 - [] Remove the null termination + increased length requirement without sacrificing performance / simplicity?
@@ -16,6 +16,6 @@
   - [] Don't allocate the keys, only store pointers.
 - [x] build.zig
 - [x] Clean up the mess. 
-- [] Benchmark against StringHashMap
+- [x] Benchmark against StringHashMap
 - [x] Add a simple repl.
   - [x] write usage

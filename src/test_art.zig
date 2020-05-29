@@ -512,6 +512,14 @@ test "max prefix len iter" {
     testing.expectEqual(p.count, p.max_count);
 }
 
+const DummyStream = struct {
+    const Self = @This();
+    pub const WriteError = error{};
+
+    pub fn print(self: *Self, comptime fmt: []const u8, args: var) WriteError!usize {
+        return 0;
+    }
+};
 test "display children" {
     const letters_sets = [_][]const []const u8{ letters[0..4], letters[0..16], letters[0..26], &letters };
     for (letters_sets) |letters_set| {
@@ -530,8 +538,10 @@ test "display children" {
                 tal.free(nt_letter);
             }
         }
-        Art(usize).displayNode(t.root, 0);
-        Art(usize).displayChildren(t.root, 0);
+
+        const dummyStream = DummyStream{};
+        Art(usize).displayNode(dummyStream, t.root, 0);
+        Art(usize).displayChildren(dummyStream, t.root, 0);
     }
 }
 
@@ -597,4 +607,65 @@ test "print to stream" {
     // }
     // try t.print();
     // Art(usize).displayNode(t.root, 0);
+}
+
+fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_name: []const u8, comptime del_fn_name: []const u8) !void {
+    const filename = "./testdata/words.txt";
+
+    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
+    defer f.close();
+
+    var linei: usize = 1;
+    const stream = &f.inStream();
+    var buf: [512:0]u8 = undefined;
+
+    var timer = try std.time.Timer.start();
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        const append_fn = @field(container, appen_fn_name);
+        const result = append_fn(line.*, linei);
+    }
+    const t1 = timer.read();
+
+    timer.reset();
+    try f.seekTo(0);
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        const get_fn = @field(container, get_fn_name);
+        const result = get_fn(line.*);
+    }
+    const t2 = timer.read();
+
+    timer.reset();
+    try f.seekTo(0);
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        const del_fn = @field(container, del_fn_name);
+        const result = del_fn(line.*);
+    }
+    const t3 = timer.read();
+
+    std.debug.warn("insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });
+}
+
+test "bench against StringHashMap" {
+    var lca = std.testing.LeakCountAllocator.init(cal);
+
+    {
+        var map = std.StringHashMap(usize).init(lca.internal_allocator);
+        defer map.deinit();
+        std.debug.warn("\nStringHashMap\n", .{});
+        try bench(&map, "put", "get", "remove");
+        try lca.validate();
+    }
+    {
+        var t = Art(usize).init(lca.internal_allocator);
+        defer t.deinit();
+        std.debug.warn("\nArt\n", .{});
+        try bench(&t, "insert", "search", "delete");
+        try lca.validate();
+    }
 }
