@@ -1,13 +1,14 @@
 const std = @import("std");
 const mem = std.mem;
 const art = @import("art.zig");
-const ArtTree = art.ArtTree;
+const Art = art.Art;
 const log = art.log;
 
 const tal = std.testing.allocator;
 const cal = std.heap.c_allocator;
-const TestAllTypes = false;
-const Types = if (TestAllTypes) [_]type{ u8, u16, u32, u64, usize, f32, f64, bool, [24]u8, [3]usize } else [_]type{usize};
+
+const test_all_ValueTypes = false;
+const ValueTypes = if (test_all_ValueTypes) [_]type{ u8, u16, u32, u64, usize, f32, f64, bool, [24]u8, [3]usize } else [_]type{usize};
 fn valAsType(comptime T: type, i: usize) T {
     return switch (@typeInfo(T)) {
         .Int => @truncate(T, i),
@@ -23,9 +24,10 @@ fn valAsType(comptime T: type, i: usize) T {
         else => @compileLog(T, @typeInfo(T)),
     };
 }
+
 test "basic" {
-    inline for (Types) |T| {
-        var t = ArtTree(T).init(tal);
+    inline for (ValueTypes) |T| {
+        var t = Art(T).init(tal);
         defer t.deinit();
         const words = [_][]const u8{
             "Aaron\x00",
@@ -39,9 +41,9 @@ test "basic" {
 }
 
 test "insert many keys" {
-    inline for (Types) |T| {
+    inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = ArtTree(T).init(lca.internal_allocator);
+        var t = Art(T).init(lca.internal_allocator);
         defer t.deinit();
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
@@ -62,9 +64,9 @@ test "insert many keys" {
 }
 
 test "insert and delete many" {
-    inline for (Types) |T| {
+    inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = ArtTree(T).init(lca.internal_allocator);
+        var t = Art(T).init(lca.internal_allocator);
         defer t.deinit();
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
@@ -100,7 +102,7 @@ test "insert and delete many" {
 }
 const testing = std.testing;
 test "long prefix" {
-    var t = ArtTree(usize).init(tal);
+    var t = Art(usize).init(tal);
     defer t.deinit();
 
     testing.expectEqual(t.insert("this:key:has:a:long:prefix:3\x00", 3), .missing);
@@ -122,9 +124,9 @@ test "long prefix" {
 }
 
 test "insert search uuid" {
-    inline for (Types) |T| {
+    inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = ArtTree(T).init(lca.internal_allocator);
+        var t = Art(T).init(lca.internal_allocator);
         defer t.deinit();
 
         const f = try std.fs.cwd().openFile("./testdata/uuid.txt", .{ .read = true });
@@ -148,18 +150,18 @@ test "insert search uuid" {
             line.len += 1;
             const result = t.search(line.*);
             testing.expect(result == .found);
-            testing.expectEqual(result.found, linei);
+            testing.expectEqual(result.found, valAsType(T, linei));
 
             linei += 1;
         }
 
         // Check the minimum
-        var l = UsizeTree.minimum(t.root);
+        var l = Art(T).minimum(t.root);
         testing.expect(l != null);
         testing.expectEqualSlices(u8, l.?.key, "00026bda-e0ea-4cda-8245-522764e9f325\x00");
 
         // Check the maximum
-        l = UsizeTree.maximum(t.root);
+        l = Art(T).maximum(t.root);
         testing.expect(l != null);
         testing.expectEqualSlices(u8, l.?.key, "ffffcb46-a92e-4822-82af-a7190f9c1ec5\x00");
 
@@ -173,7 +175,7 @@ const prefix_data = struct {
     expected: []const []const u8,
 };
 
-fn test_prefix_cb(n: *UsizeTree.Node, data: *c_void, depth: usize) bool {
+fn test_prefix_cb(n: var, data: var, depth: usize) bool {
     // std.debug.warn("test_prefix_cb {}\n", .{n});
     if (n.* == .leaf) {
         const k = n.*.leaf.key;
@@ -189,7 +191,7 @@ fn test_prefix_cb(n: *UsizeTree.Node, data: *c_void, depth: usize) bool {
 }
 
 test "iter prefix" {
-    var t = ArtTree(usize).init(cal);
+    var t = Art(usize).init(cal);
     defer t.deinit();
     const s1 = "api.foo.bar\x00";
     const s2 = "api.foo.baz\x00";
@@ -245,7 +247,7 @@ test "iter prefix" {
 }
 
 test "insert very long key" {
-    var t = ArtTree(void).init(cal);
+    var t = Art(void).init(cal);
     defer t.deinit();
 
     const key1 = [_]u8{
@@ -302,12 +304,10 @@ test "insert very long key" {
     testing.expectEqual(t.size, 2);
 }
 
-const UsizeTree = ArtTree(usize);
-
 test "insert search" {
-    inline for (Types) |T| {
+    inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = ArtTree(T).init(lca.internal_allocator);
+        var t = Art(T).init(lca.internal_allocator);
         defer t.deinit();
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
@@ -337,27 +337,26 @@ test "insert search" {
         }
 
         // Check the minimum
-        var l = ArtTree(T).minimum(t.root);
+        var l = Art(T).minimum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "A\x00");
 
         // Check the maximum
-        l = ArtTree(T).maximum(t.root);
+        l = Art(T).maximum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "zythum\x00");
         try lca.validate();
     }
 }
 
-fn sizeCb(n: *UsizeTree.Node, data: *c_void, depth: usize) bool {
+fn sizeCb(n: var, data: *usize, depth: usize) bool {
     if (n.* == .leaf) {
-        var size = @ptrCast(*usize, @alignCast(@alignOf(*usize), data));
-        size.* += 1;
+        data.* += 1;
     }
     return false;
 }
 
 test "insert search delete" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = ArtTree(usize).init(lca.internal_allocator);
+    var t = Art(usize).init(lca.internal_allocator);
     defer t.deinit();
     const filename = "./testdata/words.txt";
 
@@ -395,11 +394,11 @@ test "insert search delete" {
     }
 
     // Check the minimum
-    var l = UsizeTree.minimum(t.root);
+    var l = Art(usize).minimum(t.root);
     testing.expectEqual(l, null);
 
     // Check the maximum
-    l = UsizeTree.maximum(t.root);
+    l = Art(usize).maximum(t.root);
     testing.expectEqual(l, null);
 
     try lca.validate();
@@ -409,7 +408,7 @@ const letters = [_][]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
 test "insert search delete 2" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
     const al = lca.internal_allocator;
-    var t = ArtTree(usize).init(al);
+    var t = Art(usize).init(al);
     defer t.deinit();
     const joined = try std.mem.join(al, "\x00\n", &letters);
     defer al.free(joined);
@@ -451,11 +450,11 @@ test "insert search delete 2" {
     }
 
     // Check the minimum
-    var l = UsizeTree.minimum(t.root);
+    var l = Art(usize).minimum(t.root);
     testing.expectEqual(l, null);
 
     // Check the maximum
-    l = UsizeTree.maximum(t.root);
+    l = Art(usize).maximum(t.root);
     testing.expectEqual(l, null);
 
     try lca.validate();
@@ -463,7 +462,7 @@ test "insert search delete 2" {
 
 test "insert random delete" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = ArtTree(usize).init(lca.internal_allocator);
+    var t = Art(usize).init(lca.internal_allocator);
     defer t.deinit();
     const filename = "./testdata/words.txt";
 
@@ -499,7 +498,7 @@ test "insert random delete" {
 // TODO test_art_insert_iter
 
 test "max prefix len iter" {
-    var t = ArtTree(usize).init(tal);
+    var t = Art(usize).init(tal);
     defer t.deinit();
 
     const key1 = "foobarbaz1-test1-foo\x00";
@@ -520,7 +519,7 @@ test "max prefix len iter" {
 test "display children" {
     const letters_sets = [_][]const []const u8{ letters[0..4], letters[0..16], letters[0..26], &letters };
     for (letters_sets) |letters_set| {
-        var t = ArtTree(usize).init(cal);
+        var t = Art(usize).init(cal);
         defer t.deinit();
 
         for (letters_set) |letter, i| {
@@ -537,9 +536,9 @@ test "display children" {
         }
         // art.showLog = true;
         art.log("parent\n", .{});
-        UsizeTree.displayNode(t.root, 0);
+        Art(usize).displayNode(t.root, 0);
         art.log("children\n", .{});
-        UsizeTree.displayChildren(t.root, 0);
+        Art(usize).displayChildren(t.root, 0);
     }
 }
 
@@ -579,7 +578,7 @@ fn cb(node: var, data: var, depth: usize) bool {
 }
 test "iter data types" {
     inline for (IterTypes) |T| {
-        var t = ArtTree(usize).init(tal);
+        var t = Art(usize).init(tal);
         defer t.deinit();
         _ = try t.insert("A\x00", 0);
         // art.showLog = true;

@@ -7,7 +7,7 @@ pub fn log(comptime fmt: []const u8, args: var) void {
     if (showLog) std.debug.warn(fmt, args);
 }
 const warn = log;
-pub fn ArtTree(comptime T: type) type {
+pub fn Art(comptime T: type) type {
     return extern struct {
         root: *Node,
         size: usize,
@@ -789,7 +789,7 @@ fn replUsage(input: []const u8) void {
 }
 
 pub fn main() !void {
-    var t = ArtTree(usize).init(std.heap.c_allocator);
+    var t = Art(usize).init(std.heap.c_allocator);
     const stdin = std.io.getStdIn().inStream();
     var buf: [256]u8 = undefined;
     replUsage("");
@@ -800,7 +800,7 @@ pub fn main() !void {
             break;
         } else if (std.mem.eql(u8, input, ":r")) {
             t.deinit();
-            t = ArtTree(usize).init(std.heap.c_allocator);
+            t = Art(usize).init(std.heap.c_allocator);
             continue;
         }
         var itr = std.mem.split(input, " ");
@@ -812,7 +812,7 @@ pub fn main() !void {
                 parts[i] = part[2..];
             } else parts[i] = part;
         }
-        var res: ?ArtTree(usize).Result = null;
+        var res: ?Art(usize).Result = null;
         var buf2: [256]u8 = undefined;
         var key = try std.fmt.bufPrint(&buf2, "{}\x00", .{parts[0]});
         if (delete) {

@@ -38,7 +38,7 @@ The repl is very simple and responds to these commands:
 - d:key - deletes key
 - :r - reset (destroy and then init) the tree
 
-It will 'pretty print' the tree after each operation.
+It will print a representation the tree after each operation.
 
 # References
 - [the original c library: github.com/armon/libart](https://github.com/armon/libart)

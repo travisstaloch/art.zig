@@ -11,7 +11,7 @@ const clibart = @cImport({
 extern var show_debug: c_int;
 
 const art = @import("art.zig");
-const ArtTree = art.ArtTree;
+const Art = art.Art;
 const testing = std.testing;
 const a = std.heap.c_allocator;
 
@@ -23,13 +23,13 @@ const lang = switch (clibart.LANG) {
     'b' => .both,
     else => unreachable,
 };
-const UTree = ArtTree(usize);
+const UTree = Art(usize);
 
 test "compare node keys" {
     var t: artc.art_tree = undefined;
     _ = artc.art_tree_init(&t);
     defer _ = artc.art_tree_destroy(&t);
-    var ta = ArtTree(usize).init(a);
+    var ta = Art(usize).init(a);
     defer ta.deinit();
 
     const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
@@ -72,7 +72,7 @@ test "compare tree after delete" {
     var t: artc.art_tree = undefined;
     _ = artc.art_tree_init(&t);
     defer _ = artc.art_tree_destroy(&t);
-    var ta = ArtTree(usize).init(a);
+    var ta = Art(usize).init(a);
     defer ta.deinit();
 
     const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
