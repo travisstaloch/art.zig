@@ -43,8 +43,7 @@ test "basic" {
 test "insert many keys" {
     inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(lca.internal_allocator);
-        defer t.deinit();
+        var t = Art(T).init(&lca.allocator);
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
         defer f.close();
@@ -59,6 +58,7 @@ test "insert many keys" {
         }
         testing.expectEqual(t.size, linei - 1);
 
+        t.deinit();
         try lca.validate();
     }
 }
@@ -66,8 +66,7 @@ test "insert many keys" {
 test "insert and delete many" {
     inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(lca.internal_allocator);
-        defer t.deinit();
+        var t = Art(T).init(&lca.allocator);
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
         defer f.close();
@@ -97,6 +96,7 @@ test "insert and delete many" {
             linei += 1;
         }
         testing.expectEqual(t.size, 0);
+        t.deinit();
         try lca.validate();
     }
 }
@@ -126,8 +126,7 @@ test "long prefix" {
 test "insert search uuid" {
     inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(lca.internal_allocator);
-        defer t.deinit();
+        var t = Art(T).init(&lca.allocator);
 
         const f = try std.fs.cwd().openFile("./testdata/uuid.txt", .{ .read = true });
         defer f.close();
@@ -165,6 +164,7 @@ test "insert search uuid" {
         testing.expect(l != null);
         testing.expectEqualSlices(u8, l.?.key, "ffffcb46-a92e-4822-82af-a7190f9c1ec5\x00");
 
+        t.deinit();
         try lca.validate();
     }
 }
@@ -187,7 +187,7 @@ fn test_prefix_cb(n: var, data: *prefix_data, depth: usize) bool {
 }
 
 test "iter prefix" {
-    var t = Art(usize).init(cal);
+    var t = Art(usize).init(tal);
     defer t.deinit();
     const s1 = "api.foo.bar\x00";
     const s2 = "api.foo.baz\x00";
@@ -243,7 +243,7 @@ test "iter prefix" {
 }
 
 test "insert very long key" {
-    var t = Art(void).init(cal);
+    var t = Art(void).init(tal);
     defer t.deinit();
 
     const key1 = [_]u8{
@@ -303,8 +303,7 @@ test "insert very long key" {
 test "insert search" {
     inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(lca.internal_allocator);
-        defer t.deinit();
+        var t = Art(T).init(&lca.allocator);
 
         const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
         defer f.close();
@@ -339,6 +338,7 @@ test "insert search" {
         // Check the maximum
         l = Art(T).maximum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "zythum\x00");
+        t.deinit();
         try lca.validate();
     }
 }
@@ -352,8 +352,7 @@ fn sizeCb(n: var, data: *usize, depth: usize) bool {
 
 test "insert search delete" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = Art(usize).init(lca.internal_allocator);
-    defer t.deinit();
+    var t = Art(usize).init(&lca.allocator);
     const filename = "./testdata/words.txt";
 
     const f = try std.fs.cwd().openFile(filename, .{ .read = true });
@@ -397,17 +396,16 @@ test "insert search delete" {
     l = Art(usize).maximum(t.root);
     testing.expectEqual(l, null);
 
+    t.deinit();
     try lca.validate();
 }
 
 const letters = [_][]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 test "insert search delete 2" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    const al = lca.internal_allocator;
+    const al = &lca.allocator;
     var t = Art(usize).init(al);
-    defer t.deinit();
     const joined = try std.mem.join(al, "\x00\n", &letters);
-    defer al.free(joined);
     var f = std.io.fixedBufferStream(joined);
 
     var linei: usize = 1;
@@ -453,13 +451,14 @@ test "insert search delete 2" {
     l = Art(usize).maximum(t.root);
     testing.expectEqual(l, null);
 
+    al.free(joined);
+    t.deinit();
     try lca.validate();
 }
 
 test "insert random delete" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = Art(usize).init(lca.internal_allocator);
-    defer t.deinit();
+    var t = Art(usize).init(&lca.allocator);
     const filename = "./testdata/words.txt";
 
     const f = try std.fs.cwd().openFile(filename, .{ .read = true });
@@ -488,10 +487,46 @@ test "insert random delete" {
     const result3 = t.search(key_to_delete);
     testing.expect(result3 == .missing);
 
+    t.deinit();
     try lca.validate();
 }
 
-// TODO test_art_insert_iter
+fn iter_cb(n: var, out: *[2]u64, depth: usize) bool {
+    const l = n.leaf;
+    const line = l.value;
+    const mask = (line * (l.key[0] + l.key.len));
+    out[0] += 1;
+    out[1] ^= mask;
+    return false;
+}
+
+test "insert iter" {
+    var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
+    var t = Art(usize).init(&lca.allocator);
+    const filename = "./testdata/words.txt";
+
+    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
+    defer f.close();
+
+    var xor_mask: u64 = 0;
+    var linei: usize = 1;
+    const stream = &f.inStream();
+    var buf: [512:0]u8 = undefined;
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        const result = try t.insert(line.*, linei);
+        xor_mask ^= (linei * (buf[0] + line.len));
+        linei += 1;
+    }
+    const nlines = linei - 1;
+    var out = [1]u64{0} ** 2;
+    _ = t.iter(iter_cb, &out);
+    testing.expectEqual(nlines, out[0]);
+    testing.expectEqual(xor_mask, out[1]);
+    t.deinit();
+    try lca.validate();
+}
 
 test "max prefix len iter" {
     var t = Art(usize).init(tal);
@@ -655,17 +690,17 @@ test "bench against StringHashMap" {
     var lca = std.testing.LeakCountAllocator.init(cal);
 
     {
-        var map = std.StringHashMap(usize).init(lca.internal_allocator);
-        defer map.deinit();
+        var map = std.StringHashMap(usize).init(&lca.allocator);
         std.debug.warn("\nStringHashMap\n", .{});
         try bench(&map, "put", "get", "remove");
+        map.deinit();
         try lca.validate();
     }
     {
-        var t = Art(usize).init(lca.internal_allocator);
-        defer t.deinit();
+        var t = Art(usize).init(&lca.allocator);
         std.debug.warn("\nArt\n", .{});
         try bench(&t, "insert", "search", "delete");
+        t.deinit();
         try lca.validate();
     }
 }
