@@ -51,7 +51,7 @@ pub fn ArtTree(comptime T: type) type {
                     .node16 => n.*.node16.baseNode(),
                     .node48 => n.*.node48.baseNode(),
                     .node256 => n.*.node256.baseNode(),
-                    else => unreachable,
+                    .leaf, .empty => unreachable,
                 };
             }
 
@@ -61,7 +61,7 @@ pub fn ArtTree(comptime T: type) type {
                     .node16 => n.*.node16.num_children,
                     .node48 => n.*.node48.num_children,
                     .node256 => n.*.node256.num_children,
-                    else => 0,
+                    .leaf, .empty => 0,
                 };
             }
 
@@ -108,7 +108,7 @@ pub fn ArtTree(comptime T: type) type {
                             }
                             break :blk emptyNodeRef;
                         },
-                        else => unreachable,
+                        .leaf, .empty => unreachable,
                     };
                     if (result == emptyNodeRef) return null;
                     return result;
@@ -207,9 +207,8 @@ pub fn ArtTree(comptime T: type) type {
                 // Might be a leaf
                 if (n.* == .leaf) {
                     // Check if the expanded path matches
-                    if (leafPrefixMatches(n.*.leaf, prefix)) {
+                    if (leafPrefixMatches(n.*.leaf, prefix))
                         return cb(n, data, depth);
-                    }
                     return false;
                 }
 
@@ -246,10 +245,6 @@ pub fn ArtTree(comptime T: type) type {
 
                 // Recursively search
                 child = findChild(n, prefix[depth]);
-                // std.debug.warn("prefix {} prefix[{}] {c} child ", .{ prefix, depth, prefix[depth] });
-                // showLog = true;
-                // displayNode(child.*, 0);
-                // std.debug.warn("\n", .{});
                 _n = if (child != &emptyNodeRef) child.* else null;
                 depth += 1;
             }
@@ -260,7 +255,7 @@ pub fn ArtTree(comptime T: type) type {
             switch (n.*) {
                 .empty => return,
                 .leaf => |l| t.a.free(l.key),
-                else => {
+                .node4, .node16, .node48, .node256 => {
                     var it = n.childIterator();
                     while (it.next()) |child| {
                         t.deinitNode(child);
@@ -401,7 +396,6 @@ pub fn ArtTree(comptime T: type) type {
                     while (n.node256.children[idx] == &emptyNode) : (idx += 1) {}
                     break :blk minimum(n.node256.children[idx]);
                 },
-                else => unreachable,
             };
         }
         pub fn maximum(n: *Node) ?*Leaf {
@@ -454,10 +448,12 @@ pub fn ArtTree(comptime T: type) type {
                     // removing it makes many things fail spectularly and mysteriously
                     // i thought removing this check would be ok as all children are initialized to emptyNodeRef
                     // but that is NOT the case...
+                    // i believe the reason its necessary is that the address of the child will not equal the
+                    // address of emptyNodeRef.
                     if (n.node256.children[c] != emptyNodeRef)
                         return &n.node256.children[c];
                 },
-                else => unreachable,
+                .leaf, .empty => unreachable,
             }
             return &emptyNodeRef;
         }
@@ -468,7 +464,7 @@ pub fn ArtTree(comptime T: type) type {
                 .node16 => try t.addChild16(n, ref, c, child),
                 .node48 => try t.addChild48(n, ref, c, child),
                 .node256 => try t.addChild256(n, ref, c, child),
-                else => unreachable,
+                .leaf, .empty => unreachable,
             }
         }
 
@@ -659,7 +655,7 @@ pub fn ArtTree(comptime T: type) type {
                 .node16 => return try t.removeChild16(n, ref, l),
                 .node48 => return try t.removeChild48(n, ref, c),
                 .node256 => return try t.removeChild256(n, ref, c),
-                else => unreachable,
+                .leaf, .empty => unreachable,
             }
         }
         fn removeChild4(t: *Tree, n: *Node, ref: **Node, l: **Node) void {
@@ -770,30 +766,35 @@ pub fn ArtTree(comptime T: type) type {
     };
 }
 
-fn replUsage(input) void {
+fn replUsage(input: []const u8) void {
     const usage =
-        \\ invalid input: '{}'
         \\ usage - command <command> 
         \\         insert <key ?value> 
         \\         delete <d:key>
         \\ --commands--
         \\   :q - quit
         \\   :r - reset (deinit/init) the tree
+        \\   :h - show usage
         \\ --insert--
         \\   key - insert 'key' with value = t.size
         \\   key number - inserts key with value = parse(number)
         \\ --delete--
         \\   d:key - deletes key
+        \\
     ;
-    std.debug.warn(usage, .{input});
+    if (input.len > 0) {
+        std.debug.warn("invalid input: '{}'\n", .{input});
+    }
+    std.debug.warn(usage, .{});
 }
 
 pub fn main() !void {
     var t = ArtTree(usize).init(std.heap.c_allocator);
     const stdin = std.io.getStdIn().inStream();
     var buf: [256]u8 = undefined;
+    replUsage("");
+    std.debug.warn("> ", .{});
     while (try stdin.readUntilDelimiterOrEof(&buf, '\n')) |input| {
-        // std.debug.warn("{}\n", .{input});
         var parts: [2][]const u8 = undefined;
         if (std.mem.eql(u8, input, ":q")) {
             break;
@@ -826,11 +827,12 @@ pub fn main() !void {
                 replUsage(input);
         }
         if (res) |result| {
-            var ouput: []const u8 = if (result == .missing) "new"[0..] else "updated"[0..];
+            var ouput: []const u8 = if (result == .missing) "insert:"[0..] else "update:"[0..];
             std.debug.warn("{} size {}\n", .{ ouput, t.size });
             showLog = true;
             try t.print();
             showLog = false;
         }
+        std.debug.warn("> ", .{});
     }
 }
