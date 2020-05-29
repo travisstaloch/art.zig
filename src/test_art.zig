@@ -175,17 +175,13 @@ const prefix_data = struct {
     expected: []const []const u8,
 };
 
-fn test_prefix_cb(n: var, data: var, depth: usize) bool {
-    // std.debug.warn("test_prefix_cb {}\n", .{n});
+fn test_prefix_cb(n: var, data: *prefix_data, depth: usize) bool {
     if (n.* == .leaf) {
         const k = n.*.leaf.key;
-        // var p = @ptrCast(*prefix_data, @alignCast(@alignOf(*prefix_data), data));
-        var p = mem.bytesAsValue(prefix_data, mem.asBytes(@intToPtr(*prefix_data, @ptrToInt(data))));
-        // std.debug.warn("test_prefix_cb {} key {s} expected {}\n", .{ p, k, p.expected[p.count] });
-        testing.expect(p.count < p.max_count);
-        const expected = p.expected[p.count];
+        testing.expect(data.count < data.max_count);
+        const expected = data.expected[data.count];
         testing.expectEqualSlices(u8, k, expected);
-        p.count += 1;
+        data.count += 1;
     }
     return false;
 }
@@ -534,10 +530,7 @@ test "display children" {
                 tal.free(nt_letter);
             }
         }
-        // art.showLog = true;
-        art.log("parent\n", .{});
         Art(usize).displayNode(t.root, 0);
-        art.log("children\n", .{});
         Art(usize).displayChildren(t.root, 0);
     }
 }
@@ -570,7 +563,6 @@ fn defaultFor(comptime T: type) T {
     };
 }
 fn cb(node: var, data: var, depth: usize) bool {
-    art.log("{}: {}\n", .{ @typeName(@TypeOf(data)), data });
     const ti = @typeInfo(@TypeOf(data));
     if (ti != .Pointer)
         testing.expectEqual(defaultFor(@TypeOf(data)), data);
@@ -581,7 +573,28 @@ test "iter data types" {
         var t = Art(usize).init(tal);
         defer t.deinit();
         _ = try t.insert("A\x00", 0);
-        // art.showLog = true;
         _ = t.iter(cb, defaultFor(T));
     }
+}
+
+test "print to stream" {
+    var list = std.ArrayList(u8).init(tal);
+    defer list.deinit();
+    var stream = &list.outStream();
+    var t = Art(usize).init(tal);
+    defer t.deinit();
+    for (letters) |l| {
+        const nt_letter = try tal.alloc(u8, l.len + 1);
+        nt_letter[0] = l[0];
+        nt_letter[1] = 0;
+        _ = try t.insert(nt_letter, 0);
+        tal.free(nt_letter);
+    }
+    try t.printToStream(stream);
+    // var stderr = std.io.getStdErr().outStream();
+    // for (list.items) |item| {
+    //     _ = try stderr.writeByte(item);
+    // }
+    // try t.print();
+    // Art(usize).displayNode(t.root, 0);
 }

@@ -62,7 +62,6 @@ test "compare node keys" {
         artc.art_print(&t);
     }
     if (lang == .z or lang == .both) {
-        art.showLog = true;
         try ta.print();
     }
 }
@@ -110,12 +109,10 @@ test "compare tree after delete" {
                 show_debug = 0;
             }
             if (lang == .z or lang == .both) {
-                art.showLog = true;
                 // var list = std.ArrayList(u8).init(a);
                 // try ta.printToStream(&std.io.getStdOut().outStream());
                 // try ta.printToStream(&list.outStream());
                 try ta.print();
-                art.showLog = false;
             }
         }
         if (lang == .c or lang == .both) {
@@ -137,10 +134,8 @@ test "compare tree after delete" {
         show_debug = 0;
     }
     if (lang == .z or lang == .both) {
-        art.showLog = true;
         // var list = std.ArrayList(u8).init(a);
         // try ta.printToStream(&std.io.getStdOut().outStream());
         // try ta.printToStream(&list.outStream());
-        art.showLog = false;
     }
 }

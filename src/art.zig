@@ -2,11 +2,6 @@ const std = @import("std");
 const mem = std.mem;
 const math = std.math;
 
-pub var showLog = false;
-pub fn log(comptime fmt: []const u8, args: var) void {
-    if (showLog) std.debug.warn(fmt, args);
-}
-const warn = log;
 pub fn Art(comptime T: type) type {
     return extern struct {
         root: *Node,
@@ -135,13 +130,15 @@ pub fn Art(comptime T: type) type {
         }
 
         pub fn print(t: *Tree) !void {
-            _ = t.iter(showCb, emptyNodeRef);
+            const stderr = std.io.getStdErr().outStream();
+            _ = t.iter(showCb, stderr);
         }
         pub fn printToStream(t: *Tree, stream: var) !void {
-            _ = t.iter(showCbStream, &stream);
+            _ = t.iter(showCb, stream);
         }
         pub fn displayNode(n: *Node, depth: usize) void {
-            _ = showCb(n, emptyNodeRef, depth);
+            const stderr = std.io.getStdErr().outStream();
+            _ = showCb(n, stderr, depth);
         }
         pub fn displayChildren(n: *Node, depth: usize) void {
             var it = n.childIterator();
@@ -581,36 +578,42 @@ pub fn Art(comptime T: type) type {
 
         const spaces = [1]u8{' '} ** 256;
         pub fn showCb(n: *Node, data: var, depth: usize) bool {
+            const streamPrint = struct {
+                fn _(stream: var, comptime fmt: []const u8, args: var) void {
+                    stream.print(fmt, args) catch unreachable;
+                }
+            }._;
+
             switch (n.*) {
-                .empty => warn("empty\n", .{}),
-                .leaf => warn("{}-> {} = {}\n", .{ spaces[0 .. depth * 2], n.leaf.key, n.leaf.value }),
-                .node4 => warn("{}4   [{}] ({}) {} children\n", .{
+                .empty => streamPrint(data, "empty\n", .{}),
+                .leaf => streamPrint(data, "{}-> {} = {}\n", .{ spaces[0 .. depth * 2], n.leaf.key, n.leaf.value }),
+                .node4 => streamPrint(data, "{}4   [{}] ({}) {} children\n", .{
                     spaces[0 .. depth * 2],
                     &n.node4.keys,
                     n.node4.partial[0..math.min(MaxPrefixLen, n.node4.partial_len)],
                     n.node4.num_children,
                 }),
-                .node16 => warn("{}16  [{}] ({}) {} children\n", .{
+                .node16 => streamPrint(data, "{}16  [{}] ({}) {} children\n", .{
                     spaces[0 .. depth * 2],
                     n.node16.keys,
                     n.node16.partial[0..math.min(MaxPrefixLen, n.node16.partial_len)],
                     n.node16.num_children,
                 }),
                 .node48 => |nn| {
-                    warn("{}48  [", .{spaces[0 .. depth * 2]});
+                    streamPrint(data, "{}48  [", .{spaces[0 .. depth * 2]});
                     for (nn.keys) |c, i| {
                         if (c != 0)
-                            warn("{c}", .{@truncate(u8, i)});
+                            streamPrint(data, "{c}", .{@truncate(u8, i)});
                     }
-                    warn("] ({}) {} children\n", .{ nn.partial, n.node48.num_children });
+                    streamPrint(data, "] ({}) {} children\n", .{ nn.partial, n.node48.num_children });
                 },
                 .node256 => |nn| {
-                    warn("{}256 [", .{spaces[0 .. depth * 2]});
+                    streamPrint(data, "{}256 [", .{spaces[0 .. depth * 2]});
                     for (nn.children) |child, i| {
                         if (child != &emptyNode)
-                            warn("{c}", .{@truncate(u8, i)});
+                            streamPrint(data, "{c}", .{@truncate(u8, i)});
                     }
-                    warn("] ({}) {} children\n", .{ nn.partial, n.node256.num_children });
+                    streamPrint(data, "] ({}) {} children\n", .{ nn.partial, n.node256.num_children });
                 },
             }
             return false;
@@ -766,6 +769,7 @@ pub fn Art(comptime T: type) type {
     };
 }
 
+const warn = std.debug.warn;
 fn replUsage(input: []const u8) void {
     const usage =
         \\ usage - command <command> 
@@ -783,9 +787,9 @@ fn replUsage(input: []const u8) void {
         \\
     ;
     if (input.len > 0) {
-        std.debug.warn("invalid input: '{}'\n", .{input});
+        warn("invalid input: '{}'\n", .{input});
     }
-    std.debug.warn(usage, .{});
+    warn(usage, .{});
 }
 
 pub fn main() !void {
@@ -793,7 +797,7 @@ pub fn main() !void {
     const stdin = std.io.getStdIn().inStream();
     var buf: [256]u8 = undefined;
     replUsage("");
-    std.debug.warn("> ", .{});
+    warn("> ", .{});
     while (try stdin.readUntilDelimiterOrEof(&buf, '\n')) |input| {
         var parts: [2][]const u8 = undefined;
         if (std.mem.eql(u8, input, ":q")) {
@@ -828,11 +832,9 @@ pub fn main() !void {
         }
         if (res) |result| {
             var ouput: []const u8 = if (result == .missing) "insert:"[0..] else "update:"[0..];
-            std.debug.warn("{} size {}\n", .{ ouput, t.size });
-            showLog = true;
+            warn("{} size {}\n", .{ ouput, t.size });
             try t.print();
-            showLog = false;
         }
-        std.debug.warn("> ", .{});
+        warn("> ", .{});
     }
 }
