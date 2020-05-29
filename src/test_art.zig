@@ -35,7 +35,6 @@ test "basic" {
         for (words) |w, i| {
             _ = try t.insert(w, valAsType(T, i));
         }
-        try t.print();
     }
 }
 
@@ -406,13 +405,13 @@ test "insert search delete" {
     try lca.validate();
 }
 
+const letters = [_][]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 test "insert search delete 2" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
     const al = lca.internal_allocator;
     var t = ArtTree(usize).init(al);
     defer t.deinit();
-    const data = [_][]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
-    const joined = try std.mem.join(al, "\x00\n", &data);
+    const joined = try std.mem.join(al, "\x00\n", &letters);
     defer al.free(joined);
     var f = std.io.fixedBufferStream(joined);
 
@@ -516,4 +515,30 @@ test "max prefix len iter" {
     var p = prefix_data{ .count = 0, .max_count = 2, .expected = &expected };
     testing.expect(!t.iterPrefix("foobarbaz1-test1", test_prefix_cb, &p));
     testing.expectEqual(p.count, p.max_count);
+}
+
+test "display children" {
+    const letters_sets = [_][]const []const u8{ letters[0..4], letters[0..16], letters[0..26], &letters };
+    for (letters_sets) |letters_set| {
+        var t = ArtTree(usize).init(cal);
+        defer t.deinit();
+
+        for (letters_set) |letter, i| {
+            var j: u8 = 0;
+            while (j < 10) : (j += 1) {
+                const nt_letter = try tal.alloc(u8, letter.len + j + 1);
+                for (nt_letter) |*dup_letter| {
+                    dup_letter.* = letter[0];
+                }
+                nt_letter[letter.len + j] = 0;
+                testing.expectEqual(t.insert(nt_letter, i), .missing);
+                tal.free(nt_letter);
+            }
+        }
+        // art.showLog = true;
+        art.log("parent\n", .{});
+        UsizeTree.displayNode(t.root, 0);
+        art.log("children\n", .{});
+        UsizeTree.displayChildren(t.root, 0);
+    }
 }

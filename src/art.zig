@@ -136,46 +136,18 @@ pub fn ArtTree(comptime T: type) type {
         }
 
         pub fn print(t: *Tree) !void {
-            _ = t.iter(showCb, @as(*c_void, emptyNodeRef));
+            _ = t.iter(showCb, emptyNodeRef);
         }
         pub fn printToStream(t: *Tree, stream: var) !void {
-            _ = t.iter(showCbStream, @as(*c_void, stream));
+            _ = t.iter(showCbStream, &stream);
         }
         pub fn displayNode(n: *Node, depth: usize) void {
             _ = showCb(n, emptyNodeRef, depth);
         }
-        // TODO use childIterator()
         pub fn displayChildren(n: *Node, depth: usize) void {
-            if (n.* == .leaf or n.* == .empty) return;
-            const base = n.baseNode();
-            switch (n.*) {
-                else => {},
-                .node4 => {
-                    for (n.node4.children[0..base.num_children]) |child| {
-                        displayNode(child, depth + 1);
-                    }
-                },
-                .node16 => {
-                    for (n.node16.children[0..base.num_children]) |child| {
-                        displayNode(child, depth + 1);
-                    }
-                },
-                .node48 => {
-                    var i: usize = 0;
-                    while (i < 256) : (i += 1) {
-                        const idx = n.node48.keys[i];
-                        if (idx == 0)
-                            continue;
-                        displayNode(n.node48.children[idx - 1], depth + 1);
-                    }
-                },
-                .node256 => {
-                    var i: usize = 0;
-                    while (i < 256) : (i += 1) {
-                        if (n.node256.children[i] != &emptyNode)
-                            displayNode(n.node256.children[i], depth + 1);
-                    }
-                },
+            var it = n.childIterator();
+            while (it.next()) |child| {
+                displayNode(child, depth + 1);
             }
         }
         pub fn delete(t: *Tree, key: []const u8) Error!Result {
@@ -218,8 +190,7 @@ pub fn ArtTree(comptime T: type) type {
             return .missing;
         }
 
-        pub const Callback = fn (n: *Node, data: *c_void, depth: usize) bool;
-        pub fn iter(t: *Tree, comptime cb: Callback, data: var) bool {
+        pub fn iter(t: *Tree, comptime cb: var, data: var) bool {
             return t.recursiveIter(t.root, data, 0, cb);
         }
 
@@ -227,7 +198,7 @@ pub fn ArtTree(comptime T: type) type {
             return n.key.len > prefix.len and std.mem.startsWith(u8, n.key, prefix);
         }
 
-        pub fn iterPrefix(t: *Tree, prefix: []const u8, comptime cb: Callback, data: ?*c_void) bool {
+        pub fn iterPrefix(t: *Tree, prefix: []const u8, cb: var, data: var) bool {
             std.debug.assert(prefix.len == 0 or prefix[prefix.len - 1] != 0);
             var child: **Node = undefined;
             var _n: ?*Node = t.root;
@@ -622,7 +593,7 @@ pub fn ArtTree(comptime T: type) type {
             return idx;
         }
         /// return true to stop iteration
-        fn recursiveIter(t: *Tree, n: *Node, data: *c_void, depth: usize, comptime cb: Callback) bool {
+        fn recursiveIter(t: *Tree, n: *Node, data: var, depth: usize, cb: var) bool {
             switch (n.*) {
                 .empty => {},
                 .leaf => return cb(n, data, depth),
@@ -638,7 +609,7 @@ pub fn ArtTree(comptime T: type) type {
         }
 
         const spaces = [1]u8{' '} ** 256;
-        pub fn showCb(n: *Node, data: *c_void, depth: usize) bool {
+        pub fn showCb(n: *Node, data: var, depth: usize) bool {
             switch (n.*) {
                 .empty => warn("empty\n", .{}),
                 .leaf => warn("{}-> {} = {}\n", .{ spaces[0 .. depth * 2], n.leaf.key, n.leaf.value }),
@@ -824,6 +795,24 @@ pub fn ArtTree(comptime T: type) type {
     };
 }
 
+fn replUsage(input) void {
+    const usage =
+        \\ invalid input: '{}'
+        \\ usage - command <command> 
+        \\         insert <key ?value> 
+        \\         delete <d:key>
+        \\ --commands--
+        \\   :q - quit
+        \\   :r - reset (deinit/init) the tree
+        \\ --insert--
+        \\   key - insert 'key' with value = t.size
+        \\   key number - inserts key with value = parse(number)
+        \\ --delete--
+        \\   d:key - deletes key
+    ;
+    std.debug.warn(usage, .{input});
+}
+
 pub fn main() !void {
     var t = ArtTree(usize).init(std.heap.c_allocator);
     const stdin = std.io.getStdIn().inStream();
@@ -859,7 +848,7 @@ pub fn main() !void {
                 const n = try std.fmt.parseInt(usize, parts[1], 10);
                 res = try t.insert(key, n);
             } else
-                std.debug.warn("invalid input '{}'\nprovide a key or space separated key and value\n", .{input});
+                replUsage(input);
         }
         if (res) |result| {
             var ouput: []const u8 = if (result == .missing) "new"[0..] else "updated"[0..];
