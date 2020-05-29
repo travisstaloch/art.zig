@@ -92,7 +92,6 @@ pub fn ArtTree(comptime T: type) type {
                                 const idx = self.parent.node48.keys[i];
                                 if (idx != 0)
                                     break :blk self.parent.node48.children[idx - 1];
-
                                 if (i == 255) break;
                             }
                             break :blk emptyNodeRef;
@@ -256,39 +255,15 @@ pub fn ArtTree(comptime T: type) type {
             }
             return false;
         }
-        // TODO use childIterator()
         // Recursively destroys the tree
         fn deinitNode(t: *Tree, n: *Node) void {
             switch (n.*) {
                 .empty => return,
                 .leaf => |l| t.a.free(l.key),
-                .node4 => {
-                    var i: usize = 0;
-                    while (i < n.node4.num_children) : (i += 1) {
-                        t.deinitNode(n.node4.children[i]);
-                    }
-                },
-                .node16 => {
-                    var i: usize = 0;
-                    while (i < n.node16.num_children) : (i += 1) {
-                        t.deinitNode(n.node16.children[i]);
-                    }
-                },
-                .node48 => {
-                    var i: usize = 0;
-                    while (i < 256) : (i += 1) {
-                        const idx = n.node48.keys[i];
-                        if (idx == 0)
-                            continue;
-                        t.deinitNode(n.node48.children[idx - 1]);
-                    }
-                },
-                .node256 => {
-                    // unreachable;
-                    var i: usize = 0;
-                    while (i < 256) : (i += 1) {
-                        if (n.node256.children[i] != &emptyNode)
-                            t.deinitNode(n.node256.children[i]);
+                else => {
+                    var it = n.childIterator();
+                    while (it.next()) |child| {
+                        t.deinitNode(child);
                     }
                 },
             }
