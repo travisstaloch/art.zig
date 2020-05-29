@@ -111,7 +111,7 @@ test "long prefix" {
     testing.expectEqual(t.search("this:key:has:a:long:common:prefix:2\x00"), .{ .found = 2 });
     testing.expectEqual(t.search("this:key:has:a:long:prefix:3\x00"), .{ .found = 3 });
 
-    const expected = &[_][]const u8{
+    const expected = [_][]const u8{
         "this:key:has:a:long:common:prefix:1\x00",
         "this:key:has:a:long:common:prefix:2\x00",
         "this:key:has:a:long:prefix:3\x00",
@@ -461,6 +461,43 @@ test "insert search delete 2" {
 
     try lca.validate();
 }
+
+test "insert random delete" {
+    var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
+    var t = ArtTree(usize).init(lca.internal_allocator);
+    defer t.deinit();
+    const filename = "./testdata/words.txt";
+
+    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
+    defer f.close();
+
+    var linei: usize = 1;
+    const stream = &f.inStream();
+    var buf: [512:0]u8 = undefined;
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        const result = try t.insert(line.*, linei);
+        linei += 1;
+    }
+
+    const key_to_delete = "A\x00";
+    const lineno = 1;
+    const result = t.search(key_to_delete);
+    testing.expect(result == .found);
+    testing.expectEqual(result.found, lineno);
+
+    const result2 = try t.delete(key_to_delete);
+    testing.expect(result2 == .found);
+    testing.expectEqual(result2.found, lineno);
+
+    const result3 = t.search(key_to_delete);
+    testing.expect(result3 == .missing);
+
+    try lca.validate();
+}
+
+// TODO test_art_insert_iter
 
 test "max prefix len iter" {
     var t = ArtTree(usize).init(tal);
