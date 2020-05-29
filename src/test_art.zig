@@ -2,11 +2,12 @@ const std = @import("std");
 const mem = std.mem;
 const art = @import("art.zig");
 const Art = art.Art;
-const log = art.log;
 
 const tal = std.testing.allocator;
 const cal = std.heap.c_allocator;
+const warn = std.debug.warn;
 
+// set to test against many value types (increases test run time)
 const test_all_ValueTypes = false;
 const ValueTypes = if (test_all_ValueTypes) [_]type{ u8, u16, u32, u64, usize, f32, f64, bool, [24]u8, [3]usize } else [_]type{usize};
 fn valAsType(comptime T: type, i: usize) T {
@@ -154,12 +155,10 @@ test "insert search uuid" {
             linei += 1;
         }
 
-        // Check the minimum
         var l = Art(T).minimum(t.root);
         testing.expect(l != null);
         testing.expectEqualSlices(u8, l.?.key, "00026bda-e0ea-4cda-8245-522764e9f325\x00");
 
-        // Check the maximum
         l = Art(T).maximum(t.root);
         testing.expect(l != null);
         testing.expectEqualSlices(u8, l.?.key, "ffffcb46-a92e-4822-82af-a7190f9c1ec5\x00");
@@ -331,11 +330,9 @@ test "insert search" {
             linei += 1;
         }
 
-        // Check the minimum
         var l = Art(T).minimum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "A\x00");
 
-        // Check the maximum
         l = Art(T).maximum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "zythum\x00");
         t.deinit();
@@ -372,7 +369,6 @@ test "insert search delete" {
     _ = try f.seekTo(0);
     // Search for each line
     linei = 1;
-    var first_char: u8 = 0;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
         buf[line.len] = 0;
         line.len += 1;
@@ -388,11 +384,9 @@ test "insert search delete" {
         linei += 1;
     }
 
-    // Check the minimum
     var l = Art(usize).minimum(t.root);
     testing.expectEqual(l, null);
 
-    // Check the maximum
     l = Art(usize).maximum(t.root);
     testing.expectEqual(l, null);
 
@@ -405,32 +399,32 @@ test "insert search delete 2" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
     const al = &lca.allocator;
     var t = Art(usize).init(al);
-    const joined = try std.mem.join(al, "\x00\n", &letters);
-    var f = std.io.fixedBufferStream(joined);
 
     var linei: usize = 1;
-    const stream = &f.inStream();
     var buf: [512:0]u8 = undefined;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const result = try t.insert(line.*, linei);
+    for (letters) |letter| {
+        var line = try std.fmt.bufPrint(&buf, "{}\x00", .{letter});
+        const result = try t.insert(line, linei);
         linei += 1;
     }
+    {
+        var l = Art(usize).minimum(t.root);
+        testing.expectEqualSlices(u8, l.?.key, "A\x00");
+
+        l = Art(usize).maximum(t.root);
+        testing.expectEqualSlices(u8, l.?.key, "z\x00");
+    }
     const nlines = linei - 1;
-    // Seek back to the start
-    _ = try f.seekTo(0);
+
     // Search for each line
     linei = 1;
-    var first_char: u8 = 0;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const result = t.search(line.*);
+    for (letters) |letter| {
+        var line = try std.fmt.bufPrint(&buf, "{}\x00", .{letter});
+        const result = t.search(line);
         testing.expect(result == .found);
         testing.expectEqual(result.found, linei);
 
-        const result2 = try t.delete(line.*);
+        const result2 = try t.delete(line);
         testing.expect(result2 == .found);
         testing.expectEqual(result2.found, linei);
         const expected_size = nlines - linei;
@@ -443,15 +437,12 @@ test "insert search delete 2" {
         linei += 1;
     }
 
-    // Check the minimum
     var l = Art(usize).minimum(t.root);
     testing.expectEqual(l, null);
 
-    // Check the maximum
     l = Art(usize).maximum(t.root);
     testing.expectEqual(l, null);
 
-    al.free(joined);
     t.deinit();
     try lca.validate();
 }
@@ -683,7 +674,7 @@ fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_nam
     }
     const t3 = timer.read();
 
-    std.debug.warn("insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });
+    warn("insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });
 }
 
 test "bench against StringHashMap" {
@@ -691,14 +682,14 @@ test "bench against StringHashMap" {
 
     {
         var map = std.StringHashMap(usize).init(&lca.allocator);
-        std.debug.warn("\nStringHashMap\n", .{});
+        warn("\nStringHashMap\n", .{});
         try bench(&map, "put", "get", "remove");
         map.deinit();
         try lca.validate();
     }
     {
         var t = Art(usize).init(&lca.allocator);
-        std.debug.warn("\nArt\n", .{});
+        warn("\nArt\n", .{});
         try bench(&t, "insert", "search", "delete");
         t.deinit();
         try lca.validate();

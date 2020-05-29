@@ -8,25 +8,35 @@ As a radix tree, it provides the following:
   -  Ordered iteration
   -  Prefix based iteration
 
+NOTE: this section copied from [armon/libart](https://github.com/armon/libart)
+
 # Usage 
+See [src/test_art.zig](src/test_art.zig)
 
 ### **Important Notes**
-This library accepts zig string slices (`[]const u8`) and requires they are null terminated _AND_ their length must be incremented by 1 prior to being submitted to `insert()`, `delete()` and `search()`.  This is demonstrated thoroughly in src/test_art.zig.  
+This library accepts zig string slices (`[]const u8`) and requires they are null terminated _AND_ their length must be incremented by 1 prior to being submitted to `insert()`, `delete()` and `search()`.  This is demonstrated thoroughly in [src/test_art.zig](src/test_art.zig).  As an example the key "A" would need to be converted to "A\x00". 
 
-This is a result of having been ported from c to zig. Zig's safe build modes (debug, release-safe) do runtime bounds checks on slices.  So the insert(), search(), and delete() methods assert their key parameters are null terminated and length incremented.  `iterPrefix()` on the other hand expects NON null terminated slices. This is because it needs to check if its key parameter is a prefix of keys stored in the tree.  A random null character would prevent matches.
+This is a consequence of porting from c to zig.  Zig's safe build modes (debug and release-safe) do runtime bounds checks on slices.  Art insert(), search(), and delete() methods assert their key parameters are null terminated and length incremented (`key[key.len-1] == 0`).  This ensures that the bounds checks pass.  
 
+`iterPrefix()` on the other hand expects NON null terminated slices.  It searches the tree for keys which start with  its prefix parameter.  A null character at the end of a prefix would prevent matches.
+
+### Build
 ```sh
-# build creates zig-cache/lib/liblibart.a
+# creates zig-cache/lib/liblibart.a
 # debug
 $ zig build 
 
 # release
 $ zig build -Drelease-safe # or release-fast or release-small
+```
 
-# test
+### Test
+```sh
 $ zig build test
+```
 
-# run repl
+### Run repl
+```sh
 $ zig run src/art.zig -lc
 ```
 
@@ -38,7 +48,24 @@ The repl is very simple and responds to these commands:
 - d:key - deletes key
 - :r - reset (destroy and then init) the tree
 
-It will print a representation the tree after each operation.
+A representation of the tree will be printed after each operation.
+
+# Benchmarks
+So far there is one benchark against StringHashMap from zig's standard library in [src/test_art.zig](src/test_art.zig#L689).  The test inserts, searches for and deletes each line from testdata/words.txt (235886 lines).
+
+The results of the benchark on my machine:
+```
+StringHashMap
+insert 599ms, search 573ms, delete 570ms, combined 1742ms
+Art
+insert 870ms, search 638ms, delete 702ms, combined 2212ms
+```
+| Operation| % difference |
+| -- | --- |
+|insert|45% slower|
+|search|11% slower|
+|delete|23% slower|
+|overall|26% slower|
 
 # References
 - [the original c library: github.com/armon/libart](https://github.com/armon/libart)
