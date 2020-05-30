@@ -16,12 +16,14 @@ pub fn Art(comptime T: type) type {
             partial: [MaxPrefixLen]u8 = [1]u8{0} ** MaxPrefixLen,
         };
         fn SizedNode(comptime num_keys: usize, comptime num_children: usize) type {
+            // work around for error: extern structs cannot contain fields of type '*[0]u8'
+            const num_keys_adj = if (num_keys == 0) 1 else num_keys;
             return extern struct {
                 num_children: u8,
                 partial_len: u8,
                 partial: [MaxPrefixLen]u8 = [1]u8{0} ** MaxPrefixLen,
-                keys: [num_keys]u8 = [1]u8{0} ** num_keys,
-                children: [num_children]*Node = [1]*Node{&emptyNode} ** num_children,
+                keys: *[num_keys_adj]u8,
+                children: *[num_children]*Node,
                 const Self = @This();
                 pub fn baseNode(self: *Self) *BaseNode {
                     return @ptrCast(*BaseNode, self);
@@ -32,13 +34,17 @@ pub fn Art(comptime T: type) type {
             value: T,
             key: []const u8,
         };
+        pub const Node4 = SizedNode(4, 4);
+        pub const Node16 = SizedNode(16, 16);
+        pub const Node48 = SizedNode(256, 48);
+        pub const Node256 = SizedNode(0, 256);
         pub const Node = union(enum) {
             empty,
             leaf: Leaf,
-            node4: SizedNode(4, 4),
-            node16: SizedNode(16, 16),
-            node48: SizedNode(256, 48),
-            node256: SizedNode(0, 256),
+            node4: Node4,
+            node16: Node16,
+            node48: Node48,
+            node256: Node256,
 
             pub fn baseNode(n: *Node) *BaseNode {
                 return switch (n.*) {
@@ -50,15 +56,15 @@ pub fn Art(comptime T: type) type {
                 };
             }
 
-            pub fn numChildren(n: *Node) u8 {
-                return switch (n.*) {
-                    .node4 => n.*.node4.num_children,
-                    .node16 => n.*.node16.num_children,
-                    .node48 => n.*.node48.num_children,
-                    .node256 => n.*.node256.num_children,
-                    .leaf, .empty => 0,
-                };
-            }
+            // pub fn numChildren(n: *Node) u8 {
+            //     return switch (n.*) {
+            //         .node4 => n.*.node4.num_children,
+            //         .node16 => n.*.node16.num_children,
+            //         .node48 => n.*.node48.num_children,
+            //         .node256 => n.*.node256.num_children,
+            //         .leaf, .empty => 0,
+            //     };
+            // }
 
             pub fn childIterator(n: *Node) ChildIterator {
                 return ChildIterator{ .i = 0, .parent = n };
@@ -70,17 +76,17 @@ pub fn Art(comptime T: type) type {
                 pub fn next(self: *ChildIterator) ?*Node {
                     const result = switch (self.parent.*) {
                         .node4 => blk: {
-                            if (self.i == 4) break :blk emptyNodeRef;
+                            if (self.i == 4) break :blk empty_node_ref;
                             defer self.i += 1;
                             break :blk self.parent.node4.children[self.i];
                         },
                         .node16 => blk: {
-                            if (self.i == 16) break :blk emptyNodeRef;
+                            if (self.i == 16) break :blk empty_node_ref;
                             defer self.i += 1;
                             break :blk self.parent.node16.children[self.i];
                         },
                         .node48 => blk: {
-                            if (self.i == 256) break :blk emptyNodeRef;
+                            if (self.i == 256) break :blk empty_node_ref;
                             defer self.i += 1;
                             while (true) : (self.i += 1) {
                                 const idx = self.parent.node48.keys[self.i];
@@ -88,32 +94,32 @@ pub fn Art(comptime T: type) type {
                                     break :blk self.parent.node48.children[idx - 1];
                                 if (self.i == 255) break;
                             }
-                            break :blk emptyNodeRef;
+                            break :blk empty_node_ref;
                         },
                         .node256 => blk: {
-                            if (self.i == 256) break :blk emptyNodeRef;
+                            if (self.i == 256) break :blk empty_node_ref;
                             defer self.i += 1;
                             while (true) : (self.i += 1) {
-                                if (self.parent.node256.children[self.i] != emptyNodeRef) {
+                                if (self.parent.node256.children[self.i] != empty_node_ref) {
                                     break :blk self.parent.node256.children[self.i];
                                 }
                                 if (self.i == 255) break;
                             }
-                            break :blk emptyNodeRef;
+                            break :blk empty_node_ref;
                         },
                         .leaf, .empty => unreachable,
                     };
-                    if (result == emptyNodeRef) return null;
+                    if (result == empty_node_ref) return null;
                     return result;
                 }
             };
         };
 
-        pub var emptyNode: Node = .{ .empty = {} };
-        pub var emptyNodeRef = &emptyNode;
+        pub var empty_node: Node = .{ .empty = {} };
+        pub var empty_node_ref = &empty_node;
 
         pub fn init(a: *std.mem.Allocator) Tree {
-            return .{ .root = emptyNodeRef, .size = 0, .a = a };
+            return .{ .root = empty_node_ref, .size = 0, .a = a };
         }
         pub fn deinit(t: *Tree) void {
             if (t.size == 0) return;
@@ -147,12 +153,12 @@ pub fn Art(comptime T: type) type {
             std.debug.assert(key[key.len - 1] == 0);
             const result = try t.recursiveDelete(t.root, &t.root, key, 0);
             if (result == .found) t.size -= 1;
-            if (t.size == 0) std.debug.assert(t.root == emptyNodeRef);
+            if (t.size == 0) std.debug.assert(t.root == empty_node_ref);
             return result;
         }
         pub fn search(t: *Tree, key: []const u8) Result {
             std.debug.assert(key[key.len - 1] == 0);
-            var child: **Node = &emptyNodeRef;
+            var child: **Node = &empty_node_ref;
             var _n: ?*Node = t.root;
             var prefix_len: usize = undefined;
             var depth: u32 = 0;
@@ -177,7 +183,7 @@ pub fn Art(comptime T: type) type {
 
                 // Recursively search
                 child = findChild(n, key[depth]);
-                _n = if (child != &emptyNodeRef) child.* else null;
+                _n = if (child != &empty_node_ref) child.* else null;
                 depth += 1;
             }
             return .missing;
@@ -239,7 +245,7 @@ pub fn Art(comptime T: type) type {
 
                 // Recursively search
                 child = findChild(n, prefix[depth]);
-                _n = if (child != &emptyNodeRef) child.* else null;
+                _n = if (child != &empty_node_ref) child.* else null;
                 depth += 1;
             }
             return false;
@@ -248,30 +254,104 @@ pub fn Art(comptime T: type) type {
         fn deinitNode(t: *Tree, n: *Node) void {
             switch (n.*) {
                 .empty => return,
-                .leaf => |l| t.a.free(l.key),
+                .leaf => |l| {
+                    t.a.free(l.key);
+                    t.a.destroy(n);
+                    return;
+                },
                 .node4, .node16, .node48, .node256 => {
+                    std.debug.warn("deinitNode {} {*}\n", .{ @as(@TagType(Node), n.*), n });
                     var it = n.childIterator();
                     while (it.next()) |child| {
                         t.deinitNode(child);
                     }
+                    switch (n.*) {
+                        .node4 => {
+                            std.debug.warn("&node4 {*} keys {*} children {*}\n", .{ &n.node4, n.node4.keys, n.node4.children });
+                            t.a.destroy(n.node4.keys);
+                            std.debug.warn("1", .{});
+                            t.a.destroy(n.node4.children);
+                            std.debug.warn("2", .{});
+                            t.a.destroy(&n.node4);
+                            std.debug.warn("3\n", .{});
+                            t.a.destroy(n);
+                        },
+                        .node16 => {
+                            std.debug.warn("&node16 {*} keys {*} children {*}\n", .{ &n.node16, n.node16.keys, n.node16.children });
+                            t.a.destroy(n.node16.keys);
+                            t.a.destroy(n.node16.children);
+                            t.a.destroy(&n.node16);
+                            t.a.destroy(n);
+                        },
+                        .node48 => {
+                            std.debug.warn("&node48 {*} keys {*} children {*}\n", .{ &n.node48, n.node48.keys, n.node48.children });
+                            t.a.destroy(n.node48.keys);
+                            t.a.destroy(n.node48.children);
+                            t.a.destroy(&n.node48);
+                            t.a.destroy(n);
+                        },
+                        .node256 => {
+                            std.debug.warn("&node256 {*} keys {*} children {*}\n", .{ &n.node256, n.node256.keys, n.node256.children });
+                            t.a.destroy(n.node256.keys);
+                            t.a.destroy(n.node256.children);
+                            t.a.destroy(&n.node256);
+                            t.a.destroy(n);
+                        },
+                        else => unreachable,
+                    }
+                    // t.a.destroy(n);
                 },
             }
-            t.a.destroy(n);
         }
         fn makeLeaf(t: *Tree, key: []const u8, value: T) !*Node {
+            // @compileLog(@sizeOf(Node));
             const n = try t.a.create(Node);
             n.* = .{ .leaf = .{ .key = try mem.dupe(t.a, u8, key), .value = value } };
             return n;
         }
         fn allocNode(t: *Tree, comptime Tag: @TagType(Node)) !*Node {
-            var node = try t.a.create(Node);
+            var n = try t.a.create(Node);
             const tagName = @tagName(Tag);
-            node.* = @unionInit(Node, tagName, .{ .num_children = 0, .partial_len = 0 });
-            return node;
+            // @compileLog(@sizeOf(Node), @sizeOf(Node4), @sizeOf(Node16), @sizeOf(Node48), @sizeOf(Node256), @sizeOf(Leaf));
+            // inline for (std.meta.fields(Leaf)) |f| {
+            //     @compileLog(@sizeOf(f.field_type), f.name);
+            //     // inline for (std.meta.fields(@TypeOf(f))) |g|
+            //     //     @compileLog(g.name);
+            // }
+            // &([1]u8{0} **
+            // , .keys = undefined, .children = undefined
+            // node.* = @unionInit(Node, tagName, inner);
+            // return node;
+            const NodeT = switch (Tag) {
+                .node4 => Node4,
+                .node16 => Node16,
+                .node48 => Node48,
+                .node256 => Node256,
+                else => unreachable,
+            };
+            const node = try t.a.create(NodeT);
+            // node.* = std.mem.zeroes(NodeT);
+            const tik = @typeInfo(@TypeOf(node.keys));
+            const tic = @typeInfo(@TypeOf(node.children));
+            // std.builtin.TypeInfo
+            // @compileLog(tik.Pointer.child.len, tic.Pointer.child.len);
+            node.keys = try t.a.create([tik.Pointer.child.len]u8);
+            node.children = try t.a.create([tic.Pointer.child.len]*Node);
+            node.num_children = 0;
+            node.partial_len = 0;
+            //node.keys.*
+            // node.keys.* = [1]u8{0} ** tik.Pointer.child.len;
+            // node.children.* = [1]*Node{&empty_node} ** tic.Pointer.child.len;
+            mem.set(u8, node.keys, 0);
+            mem.set(*Node, node.children, &empty_node);
+            // std.debug.warn("{}\n", .{node.keys.len});
+
+            n.* = @unionInit(Node, tagName, node.*);
+            return n;
         }
         const Error = error{ OutOfMemory, NoMinimum };
         fn recursiveInsert(t: *Tree, n: *Node, ref: **Node, key: []const u8, value: T, depth: u32) Error!Result {
-            if (n == emptyNodeRef) {
+            if (n == empty_node_ref) {
                 ref.* = try t.makeLeaf(key, value);
                 return .missing;
             }
@@ -327,7 +407,7 @@ pub fn Art(comptime T: type) type {
         }
         fn recursiveInsertSearch(t: *Tree, n: *Node, ref: **Node, key: []const u8, value: T, depth: u32) Error!Result {
             const child = findChild(n, key[depth]);
-            if (child != &emptyNodeRef) {
+            if (child != &empty_node_ref) {
                 return try t.recursiveInsert(child.*, child, key, value, depth + 1);
             }
 
@@ -387,7 +467,7 @@ pub fn Art(comptime T: type) type {
                 },
                 .node256 => blk: {
                     var idx: usize = 0;
-                    while (n.node256.children[idx] == &emptyNode) : (idx += 1) {}
+                    while (n.node256.children[idx] == &empty_node) : (idx += 1) {}
                     break :blk minimum(n.node256.children[idx]);
                 },
             };
@@ -406,7 +486,7 @@ pub fn Art(comptime T: type) type {
                 },
                 .node256 => blk: {
                     var idx: u8 = 255;
-                    while (n.node256.children[idx] == &emptyNode) idx -= 1;
+                    while (n.node256.children[idx] == &empty_node) idx -= 1;
                     break :blk maximum(n.node256.children[idx]);
                 },
             };
@@ -422,7 +502,7 @@ pub fn Art(comptime T: type) type {
                     }
                 },
                 .node16 => {
-                    var cmp = @splat(16, c) == @as(@Vector(16, u8), n.node16.keys);
+                    var cmp = @splat(16, c) == @as(@Vector(16, u8), n.node16.keys.*);
                     const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
                     const bitfield = @ptrCast(*u17, &cmp).* & mask;
 
@@ -435,16 +515,16 @@ pub fn Art(comptime T: type) type {
                 .node256 => {
                     // seems like it shouldn't be, but this check is necessary
                     // removing it makes many things fail spectularly and mysteriously
-                    // i thought removing this check would be ok as all children are initialized to emptyNodeRef
+                    // i thought removing this check would be ok as all children are initialized to empty_node_ref
                     // but that is NOT the case...
                     // i believe the reason its necessary is that the address of the child will not equal the
-                    // address of emptyNodeRef.
-                    if (n.node256.children[c] != emptyNodeRef)
+                    // address of empty_node_ref.
+                    if (n.node256.children[c] != empty_node_ref)
                         return &n.node256.children[c];
                 },
                 .leaf, .empty => unreachable,
             }
-            return &emptyNodeRef;
+            return &empty_node_ref;
         }
 
         fn addChild(t: *Tree, n: *Node, ref: **Node, c: u8, child: *Node) Error!void {
@@ -471,8 +551,8 @@ pub fn Art(comptime T: type) type {
                 n.node4.num_children += 1;
             } else {
                 var new_node = try t.allocNode(.node16);
-                mem.copy(*Node, &new_node.node16.children, &n.node4.children);
-                mem.copy(u8, &new_node.node16.keys, &n.node4.keys);
+                mem.copy(*Node, new_node.node16.children, n.node4.children);
+                mem.copy(u8, new_node.node16.keys, n.node4.keys);
                 copyHeader(new_node.node16.baseNode(), n.node4.baseNode());
                 ref.* = new_node;
                 t.a.destroy(n);
@@ -481,7 +561,7 @@ pub fn Art(comptime T: type) type {
         }
         fn addChild16(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
             if (n.node16.num_children < 16) {
-                var cmp = @splat(16, c) < @as(@Vector(16, u8), n.node16.keys);
+                var cmp = @splat(16, c) < @as(@Vector(16, u8), n.node16.keys.*);
                 const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
                 const bitfield = @ptrCast(*u17, &cmp).* & mask;
 
@@ -497,38 +577,38 @@ pub fn Art(comptime T: type) type {
                 n.node16.children[idx] = child;
                 n.node16.num_children += 1;
             } else {
-                var newNode = try t.allocNode(.node48);
-                mem.copy(*Node, &newNode.node48.children, &n.node16.children);
+                var new_node = try t.allocNode(.node48);
+                mem.copy(*Node, new_node.node48.children, n.node16.children);
                 const base = n.baseNode();
                 var i: u8 = 0;
                 while (i < base.num_children) : (i += 1)
-                    newNode.node48.keys[n.node16.keys[i]] = i + 1;
-                copyHeader(newNode.baseNode(), base);
-                ref.* = newNode;
+                    new_node.node48.keys[n.node16.keys[i]] = i + 1;
+                copyHeader(new_node.baseNode(), base);
+                ref.* = new_node;
                 t.a.destroy(n);
-                try t.addChild48(newNode, ref, c, child);
+                try t.addChild48(new_node, ref, c, child);
             }
         }
         fn addChild48(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
             if (n.node48.num_children < 48) {
                 var pos: u8 = 0;
-                while (n.node48.children[pos] != &emptyNode) : (pos += 1) {}
+                while (n.node48.children[pos] != &empty_node) : (pos += 1) {}
                 n.node48.children[pos] = child;
                 n.node48.keys[c] = pos + 1;
                 n.node48.num_children += 1;
             } else {
-                var newNode = try t.allocNode(.node256);
+                var new_node = try t.allocNode(.node256);
                 var i: usize = 0;
                 const old_children = n.node48.children;
                 const old_keys = n.node48.keys;
                 while (i < 256) : (i += 1) {
                     if (old_keys[i] != 0)
-                        newNode.node256.children[i] = old_children[old_keys[i] - 1];
+                        new_node.node256.children[i] = old_children[old_keys[i] - 1];
                 }
-                copyHeader(newNode.baseNode(), n.baseNode());
-                ref.* = newNode;
+                copyHeader(new_node.baseNode(), n.baseNode());
+                ref.* = new_node;
                 t.a.destroy(n);
-                try t.addChild256(newNode, ref, c, child);
+                try t.addChild256(new_node, ref, c, child);
             }
         }
         fn addChild256(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
@@ -595,7 +675,7 @@ pub fn Art(comptime T: type) type {
                 .node256 => |nn| {
                     streamPrint(data, "{}256 [", .{spaces[0 .. depth * 2]});
                     for (nn.children) |child, i| {
-                        if (child != &emptyNode)
+                        if (child != &empty_node)
                             streamPrint(data, "{c}", .{@truncate(u8, i)});
                     }
                     streamPrint(data, "] ({}) {} children\n", .{ nn.partial, n.node256.num_children });
@@ -606,13 +686,13 @@ pub fn Art(comptime T: type) type {
 
         fn recursiveDelete(t: *Tree, n: *Node, ref: **Node, key: []const u8, _depth: usize) Error!Result {
             var depth = _depth;
-            if (n == emptyNodeRef) return .missing;
+            if (n == empty_node_ref) return .missing;
             if (n.* == .leaf) {
                 const l = n.*.leaf;
                 if (mem.eql(u8, n.*.leaf.key, key)) {
                     const result = Result{ .found = l.value };
                     t.deinitNode(n);
-                    ref.* = emptyNodeRef;
+                    ref.* = empty_node_ref;
                     return result;
                 }
                 return .missing;
@@ -626,7 +706,7 @@ pub fn Art(comptime T: type) type {
             }
 
             const child = findChild(n, key[depth]);
-            if (child == &emptyNodeRef) return .missing;
+            if (child == &empty_node_ref) return .missing;
             const childp = child.*;
             if (childp.* == .leaf) {
                 const l = childp.*.leaf;
@@ -655,7 +735,7 @@ pub fn Art(comptime T: type) type {
             mem.copy(*Node, n.node4.children[pos..], n.node4.children[pos + 1 ..]);
             base.num_children -= 1;
             n.node4.keys[base.num_children] = 0;
-            n.node4.children[base.num_children] = emptyNodeRef;
+            n.node4.children[base.num_children] = empty_node_ref;
             // Remove nodes with only a single child
             if (base.num_children == 1) {
                 const child = n.node4.children[0];
@@ -688,13 +768,13 @@ pub fn Art(comptime T: type) type {
             mem.copy(*Node, n.node16.children[pos..], n.node16.children[pos + 1 ..]);
             base.num_children -= 1;
             n.node16.keys[base.num_children] = 0;
-            n.node16.children[base.num_children] = emptyNodeRef;
+            n.node16.children[base.num_children] = empty_node_ref;
             if (base.num_children == 3) {
                 const new_node = try t.allocNode(.node4);
                 ref.* = new_node;
                 copyHeader(new_node.baseNode(), base);
-                mem.copy(u8, &new_node.node4.keys, n.node16.keys[0..3]);
-                mem.copy(*Node, &new_node.node4.children, n.node16.children[0..3]);
+                mem.copy(u8, new_node.node4.keys, n.node16.keys[0..3]);
+                mem.copy(*Node, new_node.node4.children, n.node16.children[0..3]);
                 t.a.destroy(n);
             }
         }
@@ -703,7 +783,7 @@ pub fn Art(comptime T: type) type {
             var pos = n.node48.keys[c];
             n.node48.keys[c] = 0;
             t.deinitNode(n.node48.children[pos - 1]);
-            n.node48.children[pos - 1] = emptyNodeRef;
+            n.node48.children[pos - 1] = empty_node_ref;
             base.num_children -= 1;
 
             if (base.num_children == 12) {
@@ -728,7 +808,7 @@ pub fn Art(comptime T: type) type {
         fn removeChild256(t: *Tree, n: *Node, ref: **Node, c: u8) Error!void {
             const base = n.baseNode();
             t.deinitNode(n.node256.children[c]);
-            n.node256.children[c] = emptyNodeRef;
+            n.node256.children[c] = empty_node_ref;
             base.num_children -= 1;
 
             // Resize to a node48 on underflow, not immediately to prevent
@@ -741,7 +821,7 @@ pub fn Art(comptime T: type) type {
                 var pos: u8 = 0;
                 var i: u8 = 0;
                 while (true) : (i += 1) {
-                    if (n.node256.children[i] != emptyNodeRef) {
+                    if (n.node256.children[i] != empty_node_ref) {
                         new_node.node48.children[pos] = n.node256.children[i];
                         new_node.node48.keys[i] = pos + 1;
                         pos += 1;

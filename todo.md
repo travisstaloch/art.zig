@@ -20,4 +20,7 @@
 - [x] Add a simple repl.
   - [x] write usage
 - [x] SIMD for node16 add and find.
-- [] make a fileEachLine helper to shrink the size of the tests.
+- [x] make a fileEachLine helper to shrink the size of the tests.
+- [] reduce Node size.  @sizeOf(Node) was above 2000 bytes!
+  - [] store pointer to keys and children. reduces size of Node to 40 bytes
+- [] use sentinel terminated slices and remove the 'user increment length' requirement. 
