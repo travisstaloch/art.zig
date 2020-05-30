@@ -19,3 +19,5 @@
 - [x] Benchmark against StringHashMap
 - [x] Add a simple repl.
   - [x] write usage
+- [x] SIMD for node16 add and find.
+- [] make a fileEachLine helper to shrink the size of the tests.

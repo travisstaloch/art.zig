@@ -422,15 +422,10 @@ pub fn Art(comptime T: type) type {
                     }
                 },
                 .node16 => {
-                    // TODO: simd
-                    var bitfield: u17 = 0;
-                    for (n.node16.keys[0..n.node16.num_children]) |k, i| {
-                        if (k == c)
-                            bitfield |= (@as(u17, 1) << @truncate(u5, i));
-                    }
-                    const mask = (@as(u17, 1) << @truncate(u5, base.num_children)) - 1;
-                    bitfield &= mask;
-                    // end TODO
+                    var cmp = @splat(16, c) == @as(@Vector(16, u8), n.node16.keys);
+                    const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
+                    const bitfield = @ptrCast(*u17, &cmp).* & mask;
+
                     if (bitfield != 0) return &n.node16.children[@ctz(usize, bitfield)];
                 },
                 .node48 => {
@@ -486,17 +481,10 @@ pub fn Art(comptime T: type) type {
         }
         fn addChild16(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
             if (n.node16.num_children < 16) {
-                // TODO: implement with simd
+                var cmp = @splat(16, c) < @as(@Vector(16, u8), n.node16.keys);
                 const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
-                var bitfield: u17 = 0;
-                var i: u8 = 0;
-                while (i < n.node16.num_children) : (i += 1) {
-                    if (c < n.node16.keys[i])
-                        bitfield |= (@as(u17, 1) << @truncate(u5, i));
-                }
-                bitfield &= mask;
-                // end TODO
-                // warn("bitfield 16 0x{x} n.node16.keys {}\n", .{ bitfield, n.node16.keys });
+                const bitfield = @ptrCast(*u17, &cmp).* & mask;
+
                 var idx: usize = 0;
                 if (bitfield != 0) {
                     idx = @ctz(usize, bitfield);

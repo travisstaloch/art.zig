@@ -139,3 +139,63 @@ test "compare tree after delete" {
         // try ta.printToStream(&list.outStream());
     }
 }
+// zig test src/clibart.zig --c-source libartc/src/art.c -I/usr/include/ -I/usr/include/x86_64-linux-gnu/ -lc -I libartc/src -I. -DLANG="'c'" --test-filter bench --release-fast
+test "bench against libart" {
+    var t: artc.art_tree = undefined;
+    _ = artc.art_tree_init(&t);
+    defer _ = artc.art_tree_destroy(&t);
+
+    var ta = Art(usize).init(a);
+    defer ta.deinit();
+
+    const filename = "./testdata/words.txt";
+
+    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
+    defer f.close();
+
+    var linei: usize = 1;
+    const stream = &f.inStream();
+    var buf: [512:0]u8 = undefined;
+
+    var timer = try std.time.Timer.start();
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        if (lang == .z or lang == .both)
+            _ = try ta.insert(line.*, linei);
+        if (lang == .c or lang == .both) {
+            var tmp: usize = 0;
+            const result = artc.art_insert(&t, line.*.ptr, @intCast(c_int, line.len), &tmp);
+            testing.expect(result == null);
+        }
+    }
+    const t1 = timer.read();
+
+    timer.reset();
+    try f.seekTo(0);
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        if (lang == .z or lang == .both)
+            _ = ta.search(line.*);
+        if (lang == .c or lang == .both) {
+            _ = artc.art_search(&t, line.*.ptr, @intCast(c_int, line.len));
+        }
+    }
+    const t2 = timer.read();
+
+    timer.reset();
+    try f.seekTo(0);
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        if (lang == .z or lang == .both)
+            _ = try ta.delete(line.*);
+        if (lang == .c or lang == .both) {
+            _ = artc.art_delete(&t, line.*.ptr, @intCast(c_int, line.len));
+        }
+    }
+    const t3 = timer.read();
+
+    std.debug.warn("lang {} insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ lang, t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });
+}
