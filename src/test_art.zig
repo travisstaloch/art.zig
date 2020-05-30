@@ -64,38 +64,47 @@ test "insert many keys" {
     }
 }
 
-test "insert and delete many" {
+fn fileEachLine(comptime do: fn (line: []const u8, linei: usize, t: var, data: var) anyerror!void, filename: []const u8, t: var, data: var) !usize {
+    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
+    defer f.close();
+
+    var linei: usize = 1;
+    const stream = &f.inStream();
+    var buf: [512:0]u8 = undefined;
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+        buf[line.len] = 0;
+        line.len += 1;
+        try do(line.*, linei, t, data);
+        linei += 1;
+    }
+    return linei - 1;
+}
+
+test "insert delete many" {
     inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
         var t = Art(T).init(&lca.allocator);
+        const filename = "./testdata/words.txt";
 
-        const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
-        defer f.close();
+        const doInsert = struct {
+            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+                const result = try _t.insert(line, valAsType(T, linei));
+                testing.expect(result == .missing);
+            }
+        }._;
+        const lines = try fileEachLine(doInsert, filename, &t, null);
 
-        var linei: usize = 1;
-        const stream = &f.inStream();
-        var buf: [256]u8 = undefined;
-        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-            buf[line.len] = 0;
-            line.len += 1;
-            const result = try t.insert(line.*, valAsType(T, linei));
-            linei += 1;
-        }
-        const nlines = linei;
-        testing.expectEqual(t.size, linei - 1);
-        _ = try f.seekTo(0);
+        const doDelete = struct {
+            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+                const result = try _t.delete(line);
+                testing.expect(result == .found);
+                testing.expectEqual(result.found, valAsType(T, linei));
+                const nlines = data;
+                testing.expectEqual(_t.size, nlines - linei);
+            }
+        }._;
+        _ = try fileEachLine(doDelete, filename, &t, lines);
 
-        linei = 1;
-        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-            buf[line.len] = 0;
-            line.len += 1;
-            const result = try t.delete(line.*);
-
-            testing.expect(result == .found);
-            testing.expectEqual(result.found, valAsType(T, linei));
-            testing.expectEqual(t.size, nlines - linei - 1);
-            linei += 1;
-        }
         testing.expectEqual(t.size, 0);
         t.deinit();
         try lca.validate();
@@ -129,31 +138,25 @@ test "insert search uuid" {
         var lca = std.testing.LeakCountAllocator.init(cal);
         var t = Art(T).init(&lca.allocator);
 
-        const f = try std.fs.cwd().openFile("./testdata/uuid.txt", .{ .read = true });
-        defer f.close();
+        const filename = "./testdata/uuid.txt";
 
-        var linei: usize = 1;
-        const stream = &f.inStream();
-        var buf: [256]u8 = undefined;
-        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-            buf[line.len] = 0;
-            line.len += 1;
-            const result = try t.insert(line.*, valAsType(T, linei));
-            testing.expect(result == .missing);
-            linei += 1;
-        }
+        const doInsert = struct {
+            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+                const result = try _t.insert(line, valAsType(T, linei));
+                testing.expect(result == .missing);
+            }
+        }._;
+        const lines = try fileEachLine(doInsert, filename, &t, null);
 
-        try f.seekTo(0);
-        linei = 1;
-        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-            buf[line.len] = 0;
-            line.len += 1;
-            const result = t.search(line.*);
-            testing.expect(result == .found);
-            testing.expectEqual(result.found, valAsType(T, linei));
+        const doSearch = struct {
+            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+                const result = _t.search(line);
 
-            linei += 1;
-        }
+                testing.expect(result == .found);
+                testing.expectEqual(result.found, valAsType(T, linei));
+            }
+        }._;
+        _ = try fileEachLine(doSearch, filename, &t, null);
 
         var l = Art(T).minimum(t.root);
         testing.expect(l != null);
@@ -304,31 +307,23 @@ test "insert search" {
         var lca = std.testing.LeakCountAllocator.init(cal);
         var t = Art(T).init(&lca.allocator);
 
-        const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
-        defer f.close();
+        const filename = "./testdata/words.txt";
 
-        var linei: usize = 1;
-        const stream = &f.inStream();
-        var buf: [512:0]u8 = undefined;
-        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-            buf[line.len] = 0;
-            line.len += 1;
-            const result = try t.insert(line.*, valAsType(T, linei));
-            linei += 1;
-        }
-        // Seek back to the start
-        _ = try f.seekTo(0);
+        const doInsert = struct {
+            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+                _ = try _t.insert(line, linei);
+            }
+        }._;
+        const lines = try fileEachLine(doInsert, filename, &t, null);
 
-        // Search for each line
-        linei = 1;
-        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-            buf[line.len] = 0;
-            line.len += 1;
-            const result = t.search(line.*);
-            testing.expect(result == .found);
-            testing.expectEqual(result.found, valAsType(T, linei));
-            linei += 1;
-        }
+        const doSearch = struct {
+            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+                const result = _t.search(line);
+                testing.expect(result == .found);
+                testing.expectEqual(result.found, valAsType(T, linei));
+            }
+        }._;
+        _ = try fileEachLine(doSearch, filename, &t, null);
 
         var l = Art(T).minimum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "A\x00");
@@ -352,37 +347,28 @@ test "insert search delete" {
     var t = Art(usize).init(&lca.allocator);
     const filename = "./testdata/words.txt";
 
-    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
-    defer f.close();
+    const doInsert = struct {
+        fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            _ = try _t.insert(line, linei);
+        }
+    }._;
+    const lines = try fileEachLine(doInsert, filename, &t, null);
 
-    var linei: usize = 1;
-    const stream = &f.inStream();
-    var buf: [512:0]u8 = undefined;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const result = try t.insert(line.*, linei);
-        linei += 1;
-    }
-    const nlines = linei - 1;
-    // Seek back to the start
-    _ = try f.seekTo(0);
-    // Search for each line
-    linei = 1;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const result = t.search(line.*);
-        testing.expect(result == .found);
-        testing.expectEqual(result.found, linei);
+    const doSearchDelete = struct {
+        fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            const nlines = data;
+            const result = _t.search(line);
+            testing.expect(result == .found);
+            testing.expectEqual(result.found, linei);
 
-        const result2 = try t.delete(line.*);
-        testing.expect(result2 == .found);
-        testing.expectEqual(result2.found, linei);
-        const expected_size = nlines - linei;
-        testing.expectEqual(expected_size, t.size);
-        linei += 1;
-    }
+            const result2 = try _t.delete(line);
+            testing.expect(result2 == .found);
+            testing.expectEqual(result2.found, linei);
+            const expected_size = nlines - linei;
+            testing.expectEqual(expected_size, _t.size);
+        }
+    }._;
+    _ = try fileEachLine(doSearchDelete, filename, &t, lines);
 
     var l = Art(usize).minimum(t.root);
     testing.expectEqual(l, null);
@@ -452,18 +438,13 @@ test "insert random delete" {
     var t = Art(usize).init(&lca.allocator);
     const filename = "./testdata/words.txt";
 
-    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
-    defer f.close();
-
-    var linei: usize = 1;
-    const stream = &f.inStream();
-    var buf: [512:0]u8 = undefined;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const result = try t.insert(line.*, linei);
-        linei += 1;
-    }
+    const doInsert = struct {
+        fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            const result = try _t.insert(line, linei);
+            testing.expect(result == .missing);
+        }
+    }._;
+    _ = try fileEachLine(doInsert, filename, &t, null);
 
     const key_to_delete = "A\x00";
     const lineno = 1;
@@ -496,21 +477,16 @@ test "insert iter" {
     var t = Art(usize).init(&lca.allocator);
     const filename = "./testdata/words.txt";
 
-    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
-    defer f.close();
-
     var xor_mask: u64 = 0;
-    var linei: usize = 1;
-    const stream = &f.inStream();
-    var buf: [512:0]u8 = undefined;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const result = try t.insert(line.*, linei);
-        xor_mask ^= (linei * (buf[0] + line.len));
-        linei += 1;
-    }
-    const nlines = linei - 1;
+    const doInsert = struct {
+        fn _(line: []const u8, linei: usize, _t: var, _xor_mask: var) anyerror!void {
+            const result = try _t.insert(line, linei);
+            testing.expect(result == .missing);
+            _xor_mask.* ^= (linei * (line[0] + line.len));
+        }
+    }._;
+    const nlines = try fileEachLine(doInsert, filename, &t, &xor_mask);
+
     var out = [1]u64{0} ** 2;
     _ = t.iter(iter_cb, &out);
     testing.expectEqual(nlines, out[0]);
@@ -638,40 +614,34 @@ test "print to stream" {
 fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_name: []const u8, comptime del_fn_name: []const u8) !void {
     const filename = "./testdata/words.txt";
 
-    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
-    defer f.close();
-
-    var linei: usize = 1;
-    const stream = &f.inStream();
-    var buf: [512:0]u8 = undefined;
-
     var timer = try std.time.Timer.start();
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const append_fn = @field(container, appen_fn_name);
-        const result = append_fn(line.*, linei);
-    }
+    const doInsert = struct {
+        fn _(line: []const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+            const append_fn = @field(_container, appen_fn_name);
+            const result = append_fn(line, linei);
+        }
+    }._;
+    _ = try fileEachLine(doInsert, filename, container, null);
     const t1 = timer.read();
 
     timer.reset();
-    try f.seekTo(0);
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const get_fn = @field(container, get_fn_name);
-        const result = get_fn(line.*);
-    }
+    const doSearch = struct {
+        fn _(line: []const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+            const get_fn = @field(_container, get_fn_name);
+            const result = get_fn(line);
+        }
+    }._;
+    _ = try fileEachLine(doSearch, filename, container, null);
     const t2 = timer.read();
 
     timer.reset();
-    try f.seekTo(0);
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-        buf[line.len] = 0;
-        line.len += 1;
-        const del_fn = @field(container, del_fn_name);
-        const result = del_fn(line.*);
-    }
+    const doDelete = struct {
+        fn _(line: []const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+            const del_fn = @field(_container, del_fn_name);
+            const result = del_fn(line);
+        }
+    }._;
+    _ = try fileEachLine(doDelete, filename, container, null);
     const t3 = timer.read();
 
     warn("insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });

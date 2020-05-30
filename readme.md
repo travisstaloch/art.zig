@@ -51,21 +51,34 @@ The repl is very simple and responds to these commands:
 A representation of the tree will be printed after each operation.
 
 # Benchmarks
-So far there is one benchark against StringHashMap from zig's standard library in [src/test_art.zig](src/test_art.zig#L689).  The test inserts, searches for and deletes each line from testdata/words.txt (235886 lines).
+The benchark consists of inserting, searching for and deleting each line from testdata/words.txt (235886 lines).
+
+### vs StringHashMap 
+(from zig's standard library) can be found here [src/test_art.zig](src/test_art.zig#L689).  
 
 The results of the benchark on my machine:
 ```
-StringHashMap
-insert 599ms, search 573ms, delete 570ms, combined 1742ms
-Art
-insert 870ms, search 638ms, delete 702ms, combined 2212ms
+StringHashMap: insert 599ms, search 573ms, delete 570ms, combined 1742ms
+Art            insert 870ms, search 638ms, delete 702ms, combined 2212ms
 ```
 | Operation| % difference |
 | -- | --- |
 |insert|45% slower|
 |search|11% slower|
 |delete|23% slower|
-|overall|26% slower|
+|combined|26% slower|
+
+### vs armon/libart
+```
+art.zig: insert 629ms, search 505ms, delete 530ms, combined 1665ms
+art.c:   insert 501ms, search 486ms, delete 491ms, combined 1479ms
+```
+| Operation| % difference |
+| -- | --- |
+|insert|25% slower|
+|search|3% slower|
+|delete|7% slower|
+|combined|12% slower|
 
 # References
 - [the original c library: github.com/armon/libart](https://github.com/armon/libart)
