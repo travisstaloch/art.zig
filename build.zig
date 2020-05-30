@@ -2,7 +2,7 @@ const Builder = @import("std").build.Builder;
 
 pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
-    const lib = b.addStaticLibrary("libart", "src/art.zig");
+    const lib = b.addStaticLibrary("art", "src/art.zig");
     lib.setBuildMode(mode);
     lib.linkLibC();
     lib.install();

@@ -22,7 +22,7 @@ This is a consequence of porting from c to zig.  Zig's safe build modes (debug a
 
 ### Build
 ```sh
-# creates zig-cache/lib/liblibart.a
+# creates zig-cache/lib/libart.a
 # debug
 $ zig build 
 
