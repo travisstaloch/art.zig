@@ -15,9 +15,9 @@ pub fn Art(comptime T: type) type {
             partial_len: u8,
             partial: [MaxPrefixLen]u8 = [1]u8{0} ** MaxPrefixLen,
         };
-        fn SizedNode(comptime num_keys: usize, comptime num_children: usize) type {
+        fn SizedNode(comptime _num_keys: usize, comptime _num_children: usize) type {
             // work around for error: extern structs cannot contain fields of type '*[0]u8'
-            const num_keys_adj = if (num_keys == 0) 1 else num_keys;
+            const num_keys_adj = if (_num_keys == 0) 1 else _num_keys;
             return extern struct {
                 num_children: u8,
                 partial_len: u8,
@@ -25,6 +25,8 @@ pub fn Art(comptime T: type) type {
                 keys: *[num_keys_adj]u8,
                 children: *[num_children]*Node,
                 const Self = @This();
+                pub const num_keys = num_keys_adj;
+                pub const num_children = _num_children;
                 pub fn baseNode(self: *Self) *BaseNode {
                     return @ptrCast(*BaseNode, self);
                 }
@@ -56,20 +58,10 @@ pub fn Art(comptime T: type) type {
                 };
             }
 
-            // pub fn numChildren(n: *Node) u8 {
-            //     return switch (n.*) {
-            //         .node4 => n.*.node4.num_children,
-            //         .node16 => n.*.node16.num_children,
-            //         .node48 => n.*.node48.num_children,
-            //         .node256 => n.*.node256.num_children,
-            //         .leaf, .empty => 0,
-            //     };
-            // }
-
             pub fn childIterator(n: *Node) ChildIterator {
                 return ChildIterator{ .i = 0, .parent = n };
             }
-
+            // TODO refactor. dry
             pub const ChildIterator = struct {
                 i: u9,
                 parent: *Node,
@@ -78,12 +70,22 @@ pub fn Art(comptime T: type) type {
                         .node4 => blk: {
                             if (self.i == 4) break :blk empty_node_ref;
                             defer self.i += 1;
-                            break :blk self.parent.node4.children[self.i];
+                            while (true) : (self.i += 1) {
+                                if (self.parent.node4.children[self.i] != empty_node_ref)
+                                    break :blk self.parent.node4.children[self.i];
+                                if (self.i == 3) break;
+                            }
+                            break :blk empty_node_ref;
                         },
                         .node16 => blk: {
                             if (self.i == 16) break :blk empty_node_ref;
                             defer self.i += 1;
-                            break :blk self.parent.node16.children[self.i];
+                            while (true) : (self.i += 1) {
+                                if (self.parent.node16.children[self.i] != empty_node_ref)
+                                    break :blk self.parent.node16.children[self.i];
+                                if (self.i == 15) break;
+                            }
+                            break :blk empty_node_ref;
                         },
                         .node48 => blk: {
                             if (self.i == 256) break :blk empty_node_ref;
@@ -122,7 +124,6 @@ pub fn Art(comptime T: type) type {
             return .{ .root = empty_node_ref, .size = 0, .a = a };
         }
         pub fn deinit(t: *Tree) void {
-            if (t.size == 0) return;
             t.deinitNode(t.root);
         }
         pub const Result = union(enum) { missing, found: T };
@@ -153,7 +154,6 @@ pub fn Art(comptime T: type) type {
             std.debug.assert(key[key.len - 1] == 0);
             const result = try t.recursiveDelete(t.root, &t.root, key, 0);
             if (result == .found) t.size -= 1;
-            if (t.size == 0) std.debug.assert(t.root == empty_node_ref);
             return result;
         }
         pub fn search(t: *Tree, key: []const u8) Result {
@@ -191,6 +191,10 @@ pub fn Art(comptime T: type) type {
 
         pub fn iter(t: *Tree, comptime cb: var, data: var) bool {
             return t.recursiveIter(t.root, data, 0, cb);
+        }
+
+        pub fn iterAll(t: *Tree, comptime cb: var, data: var) bool {
+            return t.recursiveIterAll(t.root, data, 0, cb);
         }
 
         fn leafPrefixMatches(n: Leaf, prefix: []const u8) bool {
@@ -250,78 +254,49 @@ pub fn Art(comptime T: type) type {
             }
             return false;
         }
+
         // Recursively destroys the tree
         fn deinitNode(t: *Tree, n: *Node) void {
             switch (n.*) {
                 .empty => return,
-                .leaf => |l| {
-                    t.a.free(l.key);
-                    t.a.destroy(n);
-                    return;
-                },
+                .leaf => |l| t.a.free(l.key),
                 .node4, .node16, .node48, .node256 => {
-                    std.debug.warn("deinitNode {} {*}\n", .{ @as(@TagType(Node), n.*), n });
                     var it = n.childIterator();
                     while (it.next()) |child| {
                         t.deinitNode(child);
                     }
                     switch (n.*) {
                         .node4 => {
-                            std.debug.warn("&node4 {*} keys {*} children {*}\n", .{ &n.node4, n.node4.keys, n.node4.children });
                             t.a.destroy(n.node4.keys);
-                            std.debug.warn("1", .{});
                             t.a.destroy(n.node4.children);
-                            std.debug.warn("2", .{});
-                            t.a.destroy(&n.node4);
-                            std.debug.warn("3\n", .{});
-                            t.a.destroy(n);
                         },
                         .node16 => {
-                            std.debug.warn("&node16 {*} keys {*} children {*}\n", .{ &n.node16, n.node16.keys, n.node16.children });
                             t.a.destroy(n.node16.keys);
                             t.a.destroy(n.node16.children);
-                            t.a.destroy(&n.node16);
-                            t.a.destroy(n);
                         },
                         .node48 => {
-                            std.debug.warn("&node48 {*} keys {*} children {*}\n", .{ &n.node48, n.node48.keys, n.node48.children });
                             t.a.destroy(n.node48.keys);
                             t.a.destroy(n.node48.children);
-                            t.a.destroy(&n.node48);
-                            t.a.destroy(n);
                         },
                         .node256 => {
-                            std.debug.warn("&node256 {*} keys {*} children {*}\n", .{ &n.node256, n.node256.keys, n.node256.children });
                             t.a.destroy(n.node256.keys);
                             t.a.destroy(n.node256.children);
-                            t.a.destroy(&n.node256);
-                            t.a.destroy(n);
                         },
                         else => unreachable,
                     }
-                    // t.a.destroy(n);
                 },
             }
+            t.a.destroy(n);
         }
         fn makeLeaf(t: *Tree, key: []const u8, value: T) !*Node {
-            // @compileLog(@sizeOf(Node));
             const n = try t.a.create(Node);
             n.* = .{ .leaf = .{ .key = try mem.dupe(t.a, u8, key), .value = value } };
             return n;
         }
+        // TODO try to refactor into one allocation
         fn allocNode(t: *Tree, comptime Tag: @TagType(Node)) !*Node {
             var n = try t.a.create(Node);
             const tagName = @tagName(Tag);
-            // @compileLog(@sizeOf(Node), @sizeOf(Node4), @sizeOf(Node16), @sizeOf(Node48), @sizeOf(Node256), @sizeOf(Leaf));
-            // inline for (std.meta.fields(Leaf)) |f| {
-            //     @compileLog(@sizeOf(f.field_type), f.name);
-            //     // inline for (std.meta.fields(@TypeOf(f))) |g|
-            //     //     @compileLog(g.name);
-            // }
-            // &([1]u8{0} **
-            // , .keys = undefined, .children = undefined
-            // node.* = @unionInit(Node, tagName, inner);
-            // return node;
             const NodeT = switch (Tag) {
                 .node4 => Node4,
                 .node16 => Node16,
@@ -329,24 +304,17 @@ pub fn Art(comptime T: type) type {
                 .node256 => Node256,
                 else => unreachable,
             };
-            const node = try t.a.create(NodeT);
-            // node.* = std.mem.zeroes(NodeT);
-            const tik = @typeInfo(@TypeOf(node.keys));
-            const tic = @typeInfo(@TypeOf(node.children));
-            // std.builtin.TypeInfo
-            // @compileLog(tik.Pointer.child.len, tic.Pointer.child.len);
-            node.keys = try t.a.create([tik.Pointer.child.len]u8);
-            node.children = try t.a.create([tic.Pointer.child.len]*Node);
-            node.num_children = 0;
-            node.partial_len = 0;
-            //node.keys.*
-            // node.keys.* = [1]u8{0} ** tik.Pointer.child.len;
-            // node.children.* = [1]*Node{&empty_node} ** tic.Pointer.child.len;
-            mem.set(u8, node.keys, 0);
-            mem.set(*Node, node.children, &empty_node);
-            // std.debug.warn("{}\n", .{node.keys.len});
 
-            n.* = @unionInit(Node, tagName, node.*);
+            n.* = @unionInit(Node, tagName, .{
+                .num_children = 0,
+                .partial_len = 0,
+                .keys = try t.a.create([NodeT.num_keys]u8),
+                .children = try t.a.create([NodeT.num_children]*Node),
+            });
+
+            var node = &@field(n, tagName);
+            node.keys.* = [1]u8{0} ** NodeT.num_keys;
+            node.children.* = [1]*Node{&empty_node} ** NodeT.num_children;
             return n;
         }
         const Error = error{ OutOfMemory, NoMinimum };
@@ -517,8 +485,8 @@ pub fn Art(comptime T: type) type {
                     // removing it makes many things fail spectularly and mysteriously
                     // i thought removing this check would be ok as all children are initialized to empty_node_ref
                     // but that is NOT the case...
-                    // i believe the reason its necessary is that the address of the child will not equal the
-                    // address of empty_node_ref.
+                    // the reason its necessary is that the address of the child is _NOT_ equal to the
+                    // address of empty_node_ref. of course it isnt.
                     if (n.node256.children[c] != empty_node_ref)
                         return &n.node256.children[c];
                 },
@@ -555,6 +523,8 @@ pub fn Art(comptime T: type) type {
                 mem.copy(u8, new_node.node16.keys, n.node4.keys);
                 copyHeader(new_node.node16.baseNode(), n.node4.baseNode());
                 ref.* = new_node;
+                t.a.destroy(n.node4.keys);
+                t.a.destroy(n.node4.children);
                 t.a.destroy(n);
                 try t.addChild16(new_node, ref, c, child);
             }
@@ -585,6 +555,8 @@ pub fn Art(comptime T: type) type {
                     new_node.node48.keys[n.node16.keys[i]] = i + 1;
                 copyHeader(new_node.baseNode(), base);
                 ref.* = new_node;
+                t.a.destroy(n.node16.keys);
+                t.a.destroy(n.node16.children);
                 t.a.destroy(n);
                 try t.addChild48(new_node, ref, c, child);
             }
@@ -607,6 +579,8 @@ pub fn Art(comptime T: type) type {
                 }
                 copyHeader(new_node.baseNode(), n.baseNode());
                 ref.* = new_node;
+                t.a.destroy(n.node48.keys);
+                t.a.destroy(n.node48.children);
                 t.a.destroy(n);
                 try t.addChild256(new_node, ref, c, child);
             }
@@ -625,7 +599,8 @@ pub fn Art(comptime T: type) type {
             }
             return idx;
         }
-        /// return true to stop iteration
+
+        /// calls cb in order on leaf nodes until cb returns true
         fn recursiveIter(t: *Tree, n: *Node, data: var, depth: usize, cb: var) bool {
             switch (n.*) {
                 .empty => {},
@@ -634,6 +609,23 @@ pub fn Art(comptime T: type) type {
                     var ci = n.childIterator();
                     while (ci.next()) |child| {
                         if (t.recursiveIter(child, data, depth + 1, cb))
+                            return true;
+                    }
+                },
+            }
+            return false;
+        }
+
+        /// calls cb in order on all non-empty nodes until cb returns true
+        fn recursiveIterAll(t: *Tree, n: *Node, data: var, depth: usize, cb: var) bool {
+            switch (n.*) {
+                .empty => {},
+                .leaf => return cb(n, data, depth),
+                .node4, .node16, .node48, .node256 => {
+                    if (cb(n, data, depth)) return true;
+                    var ci = n.childIterator();
+                    while (ci.next()) |child| {
+                        if (t.recursiveIterAll(child, data, depth + 1, cb))
                             return true;
                     }
                 },
@@ -654,13 +646,13 @@ pub fn Art(comptime T: type) type {
                 .leaf => streamPrint(data, "{}-> {} = {}\n", .{ spaces[0 .. depth * 2], n.leaf.key, n.leaf.value }),
                 .node4 => streamPrint(data, "{}4   [{}] ({}) {} children\n", .{
                     spaces[0 .. depth * 2],
-                    &n.node4.keys,
+                    &n.node4.keys.*,
                     n.node4.partial[0..math.min(MaxPrefixLen, n.node4.partial_len)],
                     n.node4.num_children,
                 }),
                 .node16 => streamPrint(data, "{}16  [{}] ({}) {} children\n", .{
                     spaces[0 .. depth * 2],
-                    n.node16.keys,
+                    n.node16.keys.*,
                     n.node16.partial[0..math.min(MaxPrefixLen, n.node16.partial_len)],
                     n.node16.num_children,
                 }),
@@ -727,11 +719,12 @@ pub fn Art(comptime T: type) type {
             }
         }
         fn removeChild4(t: *Tree, n: *Node, ref: **Node, l: **Node) void {
-            const pos = (@ptrToInt(l) - @ptrToInt(&n.node4.children)) / 8;
+            const pos = (@ptrToInt(l) - @ptrToInt(&n.node4.children.*)) / 8;
+            if (!(0 <= pos and pos < 4)) warn("bad pos {}\n", .{pos});
             std.debug.assert(0 <= pos and pos < 4);
             t.deinitNode(n.node4.children[pos]);
             const base = n.baseNode();
-            mem.copy(u8, n.node4.keys[pos..], n.node4.keys[pos + 1 ..]); //[0..shift_len]);
+            mem.copy(u8, n.node4.keys[pos..], n.node4.keys[pos + 1 ..]);
             mem.copy(*Node, n.node4.children[pos..], n.node4.children[pos + 1 ..]);
             base.num_children -= 1;
             n.node4.keys[base.num_children] = 0;
@@ -756,11 +749,13 @@ pub fn Art(comptime T: type) type {
                     child_base.partial_len += base.partial_len + 1;
                 }
                 ref.* = child;
+                t.a.destroy(n.node4.keys);
+                t.a.destroy(n.node4.children);
                 t.a.destroy(n);
             }
         }
         fn removeChild16(t: *Tree, n: *Node, ref: **Node, l: **Node) Error!void {
-            const pos = (@ptrToInt(l) - @ptrToInt(&n.node16.children)) / 8;
+            const pos = (@ptrToInt(l) - @ptrToInt(&n.node16.children.*)) / 8;
             std.debug.assert(0 <= pos and pos < 16);
             t.deinitNode(n.node16.children[pos]);
             const base = n.baseNode();
@@ -775,6 +770,8 @@ pub fn Art(comptime T: type) type {
                 copyHeader(new_node.baseNode(), base);
                 mem.copy(u8, new_node.node4.keys, n.node16.keys[0..3]);
                 mem.copy(*Node, new_node.node4.children, n.node16.children[0..3]);
+                t.a.destroy(n.node16.keys);
+                t.a.destroy(n.node16.children);
                 t.a.destroy(n);
             }
         }
@@ -802,6 +799,8 @@ pub fn Art(comptime T: type) type {
                     }
                     if (i == 255) break;
                 }
+                t.a.destroy(n.node48.keys);
+                t.a.destroy(n.node48.children);
                 t.a.destroy(n);
             }
         }
@@ -828,6 +827,8 @@ pub fn Art(comptime T: type) type {
                     }
                     if (i == 255) break;
                 }
+                t.a.destroy(n.node256.keys);
+                t.a.destroy(n.node256.children);
                 t.a.destroy(n);
             }
         }

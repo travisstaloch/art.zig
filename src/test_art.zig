@@ -58,7 +58,6 @@ test "insert many keys" {
             linei += 1;
         }
         testing.expectEqual(t.size, linei - 1);
-
         t.deinit();
         try lca.validate();
     }
