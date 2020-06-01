@@ -25,4 +25,4 @@
   - [x] store pointer to keys and children. reduces size of Node to 40 bytes
 - [x] use sentinel terminated slices and remove the 'user increment length' requirement. 
 - [] allow keys to be different data type
-- [] currently makeLeaf does 2 allocations and allocNode does 3. reduce these to 1 each. 
+- [x] currently makeLeaf does 2 allocations and allocNode does 3. reduce these to 1 each. 

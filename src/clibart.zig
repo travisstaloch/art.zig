@@ -191,5 +191,11 @@ test "bench against libart" {
     }
     const t3 = timer.read();
 
-    std.debug.warn("lang {} insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ lang, t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });
+    std.debug.warn("{: <7} insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{
+        if (lang == .z) "art.zig" else "art.c",
+        t1 / 1000000,
+        t2 / 1000000,
+        t3 / 1000000,
+        (t1 + t2 + t3) / 1000000,
+    });
 }
