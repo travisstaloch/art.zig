@@ -23,4 +23,6 @@
 - [x] make a fileEachLine helper to shrink the size of the tests.
 - [x] reduce Node size.  @sizeOf(Node) was above 2000 bytes!
   - [x] store pointer to keys and children. reduces size of Node to 40 bytes
-- [] use sentinel terminated slices and remove the 'user increment length' requirement. 
+- [x] use sentinel terminated slices and remove the 'user increment length' requirement. 
+- [] allow keys to be different data type
+- [] currently makeLeaf does 2 allocations and allocNode does 3. reduce these to 1 each. 

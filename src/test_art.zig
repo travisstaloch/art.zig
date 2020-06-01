@@ -30,10 +30,10 @@ test "basic" {
     inline for (ValueTypes) |T| {
         var t = Art(T).init(tal);
         defer t.deinit();
-        const words = [_][]const u8{
-            "Aaron\x00",
-            "Aaronic\x00",
-            "Aaronical\x00",
+        const words = [_][:0]const u8{
+            "Aaron",
+            "Aaronic",
+            "Aaronical",
         };
         for (words) |w, i| {
             _ = try t.insert(w, valAsType(T, i));
@@ -45,35 +45,33 @@ test "insert many keys" {
     inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
         var t = Art(T).init(&lca.allocator);
+        const filename = "./testdata/words.txt";
 
-        const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
-        defer f.close();
-        var linei: usize = 1;
-        const stream = &f.inStream();
-        var buf: [256]u8 = undefined;
-        while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
-            buf[line.len] = 0;
-            line.len += 1;
-            const result = try t.insert(line.*, valAsType(T, linei));
-            linei += 1;
-        }
-        testing.expectEqual(t.size, linei - 1);
+        const doInsert = struct {
+            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+                const result = try _t.insert(line, valAsType(T, linei));
+                testing.expect(result == .missing);
+            }
+        }._;
+        const lines = try fileEachLine(doInsert, filename, &t, null);
+
+        testing.expectEqual(t.size, lines);
         t.deinit();
         try lca.validate();
     }
 }
 
-fn fileEachLine(comptime do: fn (line: []const u8, linei: usize, t: var, data: var) anyerror!void, filename: []const u8, t: var, data: var) !usize {
+fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, t: var, data: var) anyerror!void, filename: []const u8, t: var, data: var) !usize {
     const f = try std.fs.cwd().openFile(filename, .{ .read = true });
     defer f.close();
 
     var linei: usize = 1;
     const stream = &f.inStream();
     var buf: [512:0]u8 = undefined;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |*line| {
+    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         buf[line.len] = 0;
-        line.len += 1;
-        try do(line.*, linei, t, data);
+        // line.len += 1;
+        try do(@bitCast([:0]const u8, line), linei, t, data);
         linei += 1;
     }
     return linei - 1;
@@ -86,7 +84,7 @@ test "insert delete many" {
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
-            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
                 const result = try _t.insert(line, valAsType(T, linei));
                 testing.expect(result == .missing);
             }
@@ -94,7 +92,7 @@ test "insert delete many" {
         const lines = try fileEachLine(doInsert, filename, &t, null);
 
         const doDelete = struct {
-            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
                 const result = try _t.delete(line);
                 testing.expect(result == .found);
                 testing.expectEqual(result.found, valAsType(T, linei));
@@ -114,17 +112,17 @@ test "long prefix" {
     var t = Art(usize).init(tal);
     defer t.deinit();
 
-    testing.expectEqual(t.insert("this:key:has:a:long:prefix:3\x00", 3), .missing);
-    testing.expectEqual(t.insert("this:key:has:a:long:common:prefix:2\x00", 2), .missing);
-    testing.expectEqual(t.insert("this:key:has:a:long:common:prefix:1\x00", 1), .missing);
-    testing.expectEqual(t.search("this:key:has:a:long:common:prefix:1\x00"), .{ .found = 1 });
-    testing.expectEqual(t.search("this:key:has:a:long:common:prefix:2\x00"), .{ .found = 2 });
-    testing.expectEqual(t.search("this:key:has:a:long:prefix:3\x00"), .{ .found = 3 });
+    testing.expectEqual(t.insert("this:key:has:a:long:prefix:3", 3), .missing);
+    testing.expectEqual(t.insert("this:key:has:a:long:common:prefix:2", 2), .missing);
+    testing.expectEqual(t.insert("this:key:has:a:long:common:prefix:1", 1), .missing);
+    testing.expectEqual(t.search("this:key:has:a:long:common:prefix:1"), .{ .found = 1 });
+    testing.expectEqual(t.search("this:key:has:a:long:common:prefix:2"), .{ .found = 2 });
+    testing.expectEqual(t.search("this:key:has:a:long:prefix:3"), .{ .found = 3 });
 
     const expected = [_][]const u8{
-        "this:key:has:a:long:common:prefix:1\x00",
-        "this:key:has:a:long:common:prefix:2\x00",
-        "this:key:has:a:long:prefix:3\x00",
+        "this:key:has:a:long:common:prefix:1",
+        "this:key:has:a:long:common:prefix:2",
+        "this:key:has:a:long:prefix:3",
     };
 
     var p = prefix_data{ .count = 0, .max_count = 3, .expected = &expected };
@@ -140,7 +138,7 @@ test "insert search uuid" {
         const filename = "./testdata/uuid.txt";
 
         const doInsert = struct {
-            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
                 const result = try _t.insert(line, valAsType(T, linei));
                 testing.expect(result == .missing);
             }
@@ -148,7 +146,7 @@ test "insert search uuid" {
         const lines = try fileEachLine(doInsert, filename, &t, null);
 
         const doSearch = struct {
-            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
                 const result = _t.search(line);
 
                 testing.expect(result == .found);
@@ -180,7 +178,8 @@ fn test_prefix_cb(n: var, data: *prefix_data, depth: usize) bool {
     if (n.* == .leaf) {
         const k = n.*.leaf.key;
         testing.expect(data.count < data.max_count);
-        const expected = data.expected[data.count];
+        var expected = data.expected[data.count];
+        expected.len += 1;
         testing.expectEqualSlices(u8, k, expected);
         data.count += 1;
     }
@@ -190,12 +189,12 @@ fn test_prefix_cb(n: var, data: *prefix_data, depth: usize) bool {
 test "iter prefix" {
     var t = Art(usize).init(tal);
     defer t.deinit();
-    const s1 = "api.foo.bar\x00";
-    const s2 = "api.foo.baz\x00";
-    const s3 = "api.foe.fum\x00";
-    const s4 = "abc.123.456\x00";
-    const s5 = "api.foo\x00";
-    const s6 = "api\x00";
+    const s1 = "api.foo.bar";
+    const s2 = "api.foo.baz";
+    const s3 = "api.foe.fum";
+    const s4 = "abc.123.456";
+    const s5 = "api.foo";
+    const s6 = "api";
     testing.expectEqual(t.insert(s1, 0), .missing);
     testing.expectEqual(t.insert(s2, 0), .missing);
     testing.expectEqual(t.insert(s3, 0), .missing);
@@ -305,18 +304,17 @@ test "insert search" {
     inline for (ValueTypes) |T| {
         var lca = std.testing.LeakCountAllocator.init(cal);
         var t = Art(T).init(&lca.allocator);
-
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
-            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
                 _ = try _t.insert(line, linei);
             }
         }._;
         const lines = try fileEachLine(doInsert, filename, &t, null);
 
         const doSearch = struct {
-            fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
                 const result = _t.search(line);
                 testing.expect(result == .found);
                 testing.expectEqual(result.found, valAsType(T, linei));
@@ -347,14 +345,14 @@ test "insert search delete" {
     const filename = "./testdata/words.txt";
 
     const doInsert = struct {
-        fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
             _ = try _t.insert(line, linei);
         }
     }._;
     const lines = try fileEachLine(doInsert, filename, &t, null);
 
     const doSearchDelete = struct {
-        fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
             const nlines = data;
             const result = _t.search(line);
             testing.expect(result == .found);
@@ -379,7 +377,7 @@ test "insert search delete" {
     try lca.validate();
 }
 
-const letters = [_][]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
+const letters = [_][:0]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 test "insert search delete 2" {
     var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
     const al = &lca.allocator;
@@ -388,8 +386,7 @@ test "insert search delete 2" {
     var linei: usize = 1;
     var buf: [512:0]u8 = undefined;
     for (letters) |letter| {
-        var line = try std.fmt.bufPrint(&buf, "{}\x00", .{letter});
-        const result = try t.insert(line, linei);
+        const result = try t.insert(letter, linei);
         linei += 1;
     }
     {
@@ -404,12 +401,11 @@ test "insert search delete 2" {
     // Search for each line
     linei = 1;
     for (letters) |letter| {
-        var line = try std.fmt.bufPrint(&buf, "{}\x00", .{letter});
-        const result = t.search(line);
+        const result = t.search(letter);
         testing.expect(result == .found);
         testing.expectEqual(result.found, linei);
 
-        const result2 = try t.delete(line);
+        const result2 = try t.delete(letter);
         testing.expect(result2 == .found);
         testing.expectEqual(result2.found, linei);
         const expected_size = nlines - linei;
@@ -438,14 +434,14 @@ test "insert random delete" {
     const filename = "./testdata/words.txt";
 
     const doInsert = struct {
-        fn _(line: []const u8, linei: usize, _t: var, data: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
             const result = try _t.insert(line, linei);
             testing.expect(result == .missing);
         }
     }._;
     _ = try fileEachLine(doInsert, filename, &t, null);
 
-    const key_to_delete = "A\x00";
+    const key_to_delete = "A";
     const lineno = 1;
     const result = t.search(key_to_delete);
     testing.expect(result == .found);
@@ -465,7 +461,7 @@ test "insert random delete" {
 fn iter_cb(n: var, out: *[2]u64, depth: usize) bool {
     const l = n.leaf;
     const line = l.value;
-    const mask = (line * (l.key[0] + l.key.len));
+    const mask = (line * (l.key[0] + l.key.len - 1));
     out[0] += 1;
     out[1] ^= mask;
     return false;
@@ -478,7 +474,7 @@ test "insert iter" {
 
     var xor_mask: u64 = 0;
     const doInsert = struct {
-        fn _(line: []const u8, linei: usize, _t: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: var, _xor_mask: var) anyerror!void {
             const result = try _t.insert(line, linei);
             testing.expect(result == .missing);
             _xor_mask.* ^= (linei * (line[0] + line.len));
@@ -498,9 +494,9 @@ test "max prefix len iter" {
     var t = Art(usize).init(tal);
     defer t.deinit();
 
-    const key1 = "foobarbaz1-test1-foo\x00";
-    const key2 = "foobarbaz1-test1-bar\x00";
-    const key3 = "foobarbaz1-test2-foo\x00";
+    const key1 = "foobarbaz1-test1-foo";
+    const key2 = "foobarbaz1-test1-bar";
+    const key3 = "foobarbaz1-test2-foo";
 
     testing.expectEqual(t.insert(key1, 1), .missing);
     testing.expectEqual(t.insert(key2, 2), .missing);
@@ -522,7 +518,7 @@ const DummyStream = struct {
     }
 };
 test "display children" {
-    const letters_sets = [_][]const []const u8{ letters[0..4], letters[0..16], letters[0..26], &letters };
+    const letters_sets = [_][]const [:0]const u8{ letters[0..4], letters[0..16], letters[0..26], &letters };
     for (letters_sets) |letters_set| {
         var t = Art(usize).init(cal);
         defer t.deinit();
@@ -535,7 +531,7 @@ test "display children" {
                     dup_letter.* = letter[0];
                 }
                 nt_letter[letter.len + j] = 0;
-                testing.expectEqual(t.insert(nt_letter, i), .missing);
+                testing.expectEqual(t.insert(@bitCast([:0]const u8, nt_letter), i), .missing);
                 tal.free(nt_letter);
             }
         }
@@ -583,7 +579,7 @@ test "iter data types" {
     inline for (IterTypes) |T| {
         var t = Art(usize).init(tal);
         defer t.deinit();
-        _ = try t.insert("A\x00", 0);
+        _ = try t.insert("A", 0);
         _ = t.iter(cb, defaultFor(T));
     }
 }
@@ -595,19 +591,9 @@ test "print to stream" {
     var t = Art(usize).init(tal);
     defer t.deinit();
     for (letters) |l| {
-        const nt_letter = try tal.alloc(u8, l.len + 1);
-        nt_letter[0] = l[0];
-        nt_letter[1] = 0;
-        _ = try t.insert(nt_letter, 0);
-        tal.free(nt_letter);
+        _ = try t.insert(l, 0);
     }
     try t.printToStream(stream);
-    // var stderr = std.io.getStdErr().outStream();
-    // for (list.items) |item| {
-    //     _ = try stderr.writeByte(item);
-    // }
-    // try t.print();
-    // Art(usize).displayNode(t.root, 0);
 }
 
 fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_name: []const u8, comptime del_fn_name: []const u8) !void {
@@ -615,7 +601,7 @@ fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_nam
 
     var timer = try std.time.Timer.start();
     const doInsert = struct {
-        fn _(line: []const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
             const append_fn = @field(_container, appen_fn_name);
             const result = append_fn(line, linei);
         }
@@ -625,7 +611,7 @@ fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_nam
 
     timer.reset();
     const doSearch = struct {
-        fn _(line: []const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
             const get_fn = @field(_container, get_fn_name);
             const result = get_fn(line);
         }
@@ -635,7 +621,7 @@ fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_nam
 
     timer.reset();
     const doDelete = struct {
-        fn _(line: []const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
             const del_fn = @field(_container, del_fn_name);
             const result = del_fn(line);
         }

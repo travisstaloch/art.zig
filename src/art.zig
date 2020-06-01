@@ -97,7 +97,6 @@ pub fn Art(comptime T: type) type {
                 fn body256(_self: *ChildIterator, parent: var) ?*Node {
                     if (parent.children[_self.i] != empty_node_ref)
                         return parent.children[_self.i];
-
                     return null;
                 }
             };
@@ -113,9 +112,10 @@ pub fn Art(comptime T: type) type {
             t.deinitNode(t.root);
         }
         pub const Result = union(enum) { missing, found: T };
-        pub fn insert(t: *Tree, key: []const u8, value: T) !Result {
-            std.debug.assert(key[key.len - 1] == 0);
-            const result = try t.recursiveInsert(t.root, &t.root, key, value, 0);
+        pub fn insert(t: *Tree, key: [:0]const u8, value: T) !Result {
+            var _key = key;
+            _key.len += 1;
+            const result = try t.recursiveInsert(t.root, &t.root, _key, value, 0);
             if (result == .missing) t.size += 1;
             return result;
         }
@@ -136,14 +136,16 @@ pub fn Art(comptime T: type) type {
                 displayNode(stream, child, depth + 1);
             }
         }
-        pub fn delete(t: *Tree, key: []const u8) Error!Result {
-            std.debug.assert(key[key.len - 1] == 0);
-            const result = try t.recursiveDelete(t.root, &t.root, key, 0);
+        pub fn delete(t: *Tree, key: [:0]const u8) Error!Result {
+            var _key = key;
+            _key.len += 1;
+            const result = try t.recursiveDelete(t.root, &t.root, _key, 0);
             if (result == .found) t.size -= 1;
             return result;
         }
-        pub fn search(t: *Tree, key: []const u8) Result {
-            std.debug.assert(key[key.len - 1] == 0);
+        pub fn search(t: *Tree, key: [:0]const u8) Result {
+            var _key = key;
+            _key.len += 1;
             var child: **Node = &empty_node_ref;
             var _n: ?*Node = t.root;
             var prefix_len: usize = undefined;
@@ -152,7 +154,7 @@ pub fn Art(comptime T: type) type {
                 // Might be a leaf
                 if (n.* == .leaf) {
                     // Check if the expanded path matches
-                    if (std.mem.eql(u8, n.leaf.key, key)) {
+                    if (std.mem.eql(u8, n.leaf.key, _key)) {
                         return Result{ .found = n.leaf.value };
                     }
                     return .missing;
@@ -161,14 +163,14 @@ pub fn Art(comptime T: type) type {
 
                 // Bail if the prefix does not match
                 if (base.partial_len > 0) {
-                    prefix_len = checkPrefix(base, key, depth);
+                    prefix_len = checkPrefix(base, _key, depth);
                     if (prefix_len != math.min(MaxPrefixLen, base.partial_len))
                         return .missing;
                     depth += base.partial_len;
                 }
 
                 // Recursively search
-                child = findChild(n, key[depth]);
+                child = findChild(n, _key[depth]);
                 _n = if (child != &empty_node_ref) child.* else null;
                 depth += 1;
             }
@@ -602,7 +604,7 @@ pub fn Art(comptime T: type) type {
             return false;
         }
 
-        /// calls cb in order on all non-empty nodes until cb returns true
+        /// calls cb in order on all nodes (not just leaves) until cb returns true
         fn recursiveIterAll(t: *Tree, n: *Node, data: var, depth: usize, cb: var) bool {
             switch (n.*) {
                 .empty => {},
