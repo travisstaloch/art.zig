@@ -1,8 +1,4 @@
 # Features
-NOTES: 
-> from [armon/libart](https://github.com/armon/libart)
-
-> the memory footprint described here is unverified
 
 This library provides a zig implementation of the Adaptive Radix Tree or ART. The ART operates similar to a traditional radix tree but avoids the wasted space of internal nodes by changing the node size. It makes use of 4 node sizes (4, 16, 48, 256), and can guarantee that the overhead is no more than 52 bytes per key, though in practice it is much lower.
 As a radix tree, it provides the following:
@@ -12,6 +8,11 @@ As a radix tree, it provides the following:
   -  Prefix compression
   -  Ordered iteration
   -  Prefix based iteration
+
+NOTES: 
+> taken from [armon/libart](https://github.com/armon/libart)
+
+> the memory footprint described here is unverified
 
 
 # Usage 

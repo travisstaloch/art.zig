@@ -70,7 +70,6 @@ fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, t: var, data:
     var buf: [512:0]u8 = undefined;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         buf[line.len] = 0;
-        // line.len += 1;
         try do(@bitCast([:0]const u8, line), linei, t, data);
         linei += 1;
     }
