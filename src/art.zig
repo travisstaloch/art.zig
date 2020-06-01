@@ -61,58 +61,44 @@ pub fn Art(comptime T: type) type {
             pub fn childIterator(n: *Node) ChildIterator {
                 return ChildIterator{ .i = 0, .parent = n };
             }
-            // TODO refactor. dry
             pub const ChildIterator = struct {
                 i: u9,
                 parent: *Node,
+
                 pub fn next(self: *ChildIterator) ?*Node {
-                    const result = switch (self.parent.*) {
-                        .node4 => blk: {
-                            if (self.i == 4) break :blk empty_node_ref;
-                            defer self.i += 1;
-                            while (true) : (self.i += 1) {
-                                if (self.parent.node4.children[self.i] != empty_node_ref)
-                                    break :blk self.parent.node4.children[self.i];
-                                if (self.i == 3) break;
-                            }
-                            break :blk empty_node_ref;
-                        },
-                        .node16 => blk: {
-                            if (self.i == 16) break :blk empty_node_ref;
-                            defer self.i += 1;
-                            while (true) : (self.i += 1) {
-                                if (self.parent.node16.children[self.i] != empty_node_ref)
-                                    break :blk self.parent.node16.children[self.i];
-                                if (self.i == 15) break;
-                            }
-                            break :blk empty_node_ref;
-                        },
-                        .node48 => blk: {
-                            if (self.i == 256) break :blk empty_node_ref;
-                            defer self.i += 1;
-                            while (true) : (self.i += 1) {
-                                const idx = self.parent.node48.keys[self.i];
-                                if (idx != 0)
-                                    break :blk self.parent.node48.children[idx - 1];
-                                if (self.i == 255) break;
-                            }
-                            break :blk empty_node_ref;
-                        },
-                        .node256 => blk: {
-                            if (self.i == 256) break :blk empty_node_ref;
-                            defer self.i += 1;
-                            while (true) : (self.i += 1) {
-                                if (self.parent.node256.children[self.i] != empty_node_ref) {
-                                    break :blk self.parent.node256.children[self.i];
-                                }
-                                if (self.i == 255) break;
-                            }
-                            break :blk empty_node_ref;
-                        },
+                    return switch (self.parent.*) {
+                        .node4 => self.yieldNext(self.parent.node4, 4, body4_16),
+                        .node16 => self.yieldNext(self.parent.node16, 16, body4_16),
+                        .node48 => self.yieldNext(self.parent.node48, 256, body48),
+                        .node256 => self.yieldNext(self.parent.node256, 256, body256),
                         .leaf, .empty => unreachable,
                     };
-                    if (result == empty_node_ref) return null;
-                    return result;
+                }
+                fn yieldNext(self: *ChildIterator, node: var, max: u9, loopBody: fn (self: *ChildIterator, parent: var) bool) ?*Node {
+                    if (self.i == max) return null;
+                    defer self.i += 1;
+                    while (true) : (self.i += 1) {
+                        if (loopBody(self, node)) |n| return n;
+                        if (self.i == max - 1) break;
+                    }
+                    return null;
+                }
+                fn body4_16(_self: *ChildIterator, parent: var) ?*Node {
+                    if (parent.children[_self.i] != empty_node_ref)
+                        return parent.children[_self.i];
+                    return null;
+                }
+                fn body48(_self: *ChildIterator, parent: var) ?*Node {
+                    const idx = parent.keys[_self.i];
+                    if (idx != 0 and parent.children[idx - 1] != empty_node_ref)
+                        return parent.children[idx - 1];
+                    return null;
+                }
+                fn body256(_self: *ChildIterator, parent: var) ?*Node {
+                    if (parent.children[_self.i] != empty_node_ref)
+                        return parent.children[_self.i];
+
+                    return null;
                 }
             };
         };
