@@ -19,11 +19,7 @@ NOTES:
 See [src/test_art.zig](src/test_art.zig)
 
 ### **Important Notes**
-This library accepts zig string slices (`[]const u8`) and requires they are null terminated _AND_ their length must be incremented by 1 prior to being submitted to `insert()`, `delete()` and `search()`.  This is demonstrated thoroughly in [src/test_art.zig](src/test_art.zig).  As an example the key "A" would need to be converted to "A\x00". 
-
-This is a consequence of porting from c to zig.  Zig's safe build modes (debug and release-safe) do runtime bounds checks on slices.  Art insert(), search(), and delete() methods assert their key parameters are null terminated and length incremented (`key[key.len-1] == 0`).  This ensures that the bounds checks pass.  
-
-`iterPrefix()` on the other hand expects NON null terminated slices.  It searches the tree for keys which start with  its prefix parameter.  A null character at the end of a prefix would prevent matches.
+This library accepts zig string slices (`[:0]const u8`) which means they are required to be null terminated. 
 
 ### Build
 ```sh
@@ -63,27 +59,27 @@ The benchark consists of inserting, searching for and deleting each line from te
 
 The results of the benchark on my machine:
 ```
-StringHashMap: insert 599ms, search 573ms, delete 570ms, combined 1742ms
-Art            insert 870ms, search 638ms, delete 702ms, combined 2212ms
+Art            insert 694ms, search 624ms, delete 658ms, combined 1978ms
+StringHashMap: insert 606ms, search 581ms, delete 580ms, combined 1767ms
 ```
 | Operation| % difference |
 | -- | --- |
-|insert|45% slower|
-|search|11% slower|
-|delete|23% slower|
-|combined|26% slower|
+|insert|14.5% slower|
+|search|07.4% slower|
+|delete|13.4% slower|
+|combined|11.9% slower|
 
 ### vs armon/libart
 ```
-art.zig: insert 629ms, search 505ms, delete 530ms, combined 1665ms
-art.c:   insert 501ms, search 486ms, delete 491ms, combined 1479ms
+art.zig insert 505ms, search 482ms, delete 494ms, combined 1481ms
+art.c   insert 494ms, search 481ms, delete 484ms, combined 1459ms
 ```
 | Operation| % difference |
 | -- | --- |
-|insert|25% slower|
-|search|3% slower|
-|delete|7% slower|
-|combined|12% slower|
+|insert|2.22% slower|
+|search|0.20% slower|
+|delete|2.06% slower|
+|combined|1.50% slower|
 
 # References
 - [the original c library: github.com/armon/libart](https://github.com/armon/libart)
