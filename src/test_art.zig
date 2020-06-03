@@ -649,3 +649,36 @@ test "bench against StringHashMap" {
         try lca.validate();
     }
 }
+
+// test "fuzz" {
+//     var lca = testing.LeakCountAllocator.init(cal);
+//     var t = Art(u8).init(&lca.allocator);
+//     // generate random keys and values
+//     var rnd = std.rand.DefaultPrng.init(0);
+//     std.rand.DefaultPrng.seed(&rnd, @intCast(u64, std.time.nanoTimestamp()));
+
+//     const num_keys = 100000;
+//     var keys: [num_keys][:0]const u8 = undefined;
+//     var i: usize = 0;
+//     while (i < num_keys) : (i += 1) {
+//         const klen = std.rand.Random.intRangeLessThan(&rnd.random, u8, 2, 255);
+//         const key = try cal.alloc(u8, klen);
+//         for (key[0 .. klen - 1]) |*c|
+//             c.* = std.rand.Random.intRangeLessThan(&rnd.random, u8, 32, 127);
+//         key[klen - 1] = 0;
+//         keys[i] = @bitCast([:0]u8, key);
+//         _ = try t.insert(keys[i], klen);
+//     }
+
+//     for (keys) |key| {
+//         const result = t.search(@bitCast([:0]u8, key));
+//         if (result != .found) {
+//             for (key) |c| warn("{},", .{c});
+//             warn("\n", .{});
+//             warn("t.size {}\n", .{t.size});
+//         }
+
+//         testing.expect(result == .found);
+//         testing.expectEqual(result.found, @truncate(u8, key.len));
+//     }
+// }
