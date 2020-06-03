@@ -52,30 +52,32 @@ The repl is very simple and responds to these commands:
 A representation of the tree will be printed after each operation.
 
 # Benchmarks
-The benchark consists of inserting, searching for and deleting each line from testdata/words.txt (235886 lines).
+This simple benchark consists of inserting, searching for and deleting each line from testdata/words.txt (235886 lines).  Benchmarks are compiled with --release-fast. 
 
 ### vs StringHashMap 
 (from zig's standard library) can be found here [src/test_art.zig](src/test_art.zig#L689).  
 
 The results of the benchark on my machine:
 ```
-Art            insert 694ms, search 624ms, delete 658ms, combined 1978ms
-StringHashMap: insert 606ms, search 581ms, delete 580ms, combined 1767ms
+Art           insert 507ms, search 481ms, delete 495ms, combined 1484ms
+StringHashMap insert 487ms, search 482ms, delete 485ms, combined 1456ms
 ```
+
 | Operation| % difference |
-| -- | --- |
-|insert|14.5% slower|
-|search|07.4% slower|
-|delete|13.4% slower|
-|combined|11.9% slower|
+| --- | --- | 
+|insert|04.1% slower|
+|search|00.2% faster|
+|delete|02.0% slower|
+|combined|01.9% slower|
 
 ### vs armon/libart
+Can be found [src/clibart.zig](src/clibart.zig#L139)
 ```
 art.zig insert 505ms, search 482ms, delete 494ms, combined 1481ms
 art.c   insert 494ms, search 481ms, delete 484ms, combined 1459ms
 ```
 | Operation| % difference |
-| -- | --- |
+| --- | --- |
 |insert|2.22% slower|
 |search|0.20% slower|
 |delete|2.06% slower|
