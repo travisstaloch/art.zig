@@ -55,7 +55,7 @@ A representation of the tree will be printed after each operation.
 This simple benchark consists of inserting, searching for and deleting each line from testdata/words.txt (235886 lines).  Benchmarks are compiled with --release-fast. 
 
 ### vs StringHashMap 
-(from zig's standard library) can be found here [src/test_art.zig](src/test_art.zig#L689).  
+(from zig's standard library) can be found here [src/test_art.zig](src/test_art.zig#L589).
 
 The results of the benchark on my machine:
 ```

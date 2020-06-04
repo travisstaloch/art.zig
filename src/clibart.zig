@@ -51,7 +51,7 @@ test "compare node keys" {
             temp.* = linei;
             const result = artc.art_insert(&t, line.ptr, @intCast(c_int, line.len), temp);
         } else if (lang == .z or lang == .both) {
-            const result = try ta.insert(@bitCast([:0]const u8, line), linei);
+            const result = try ta.insert(buf[0..line.len :0], linei);
         }
         linei += 1;
     }
@@ -89,7 +89,7 @@ test "compare tree after delete" {
             temp.* = linei;
             const result = artc.art_insert(&t, line.ptr, @intCast(c_int, line.len), temp);
         } else if (lang == .z or lang == .both) {
-            const result = try ta.insert(@bitCast([:0]const u8, line), linei);
+            const result = try ta.insert(buf[0..line.len :0], linei);
         }
         // if (linei == stop_line) break;
         linei += 1;
@@ -116,7 +116,7 @@ test "compare tree after delete" {
             const result = artc.art_delete(&t, line.ptr, @intCast(c_int, line.len));
             testing.expect(result != null);
         } else if (lang == .z or lang == .both) {
-            const result = try ta.delete(@bitCast([:0]const u8, line));
+            const result = try ta.delete(buf[0..line.len :0]);
             if (result != .found) {
                 std.debug.warn("\nfailed on line {}:{}\n", .{ linei, line });
             }
@@ -158,7 +158,7 @@ test "bench against libart" {
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         buf[line.len] = 0;
         if (lang == .z or lang == .both)
-            _ = try ta.insert(@bitCast([:0]const u8, line), linei);
+            _ = try ta.insert(buf[0..line.len :0], linei);
         if (lang == .c or lang == .both) {
             var tmp: usize = 0;
             const result = artc.art_insert(&t, line.ptr, @intCast(c_int, line.len), &tmp);
@@ -172,7 +172,7 @@ test "bench against libart" {
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         buf[line.len] = 0;
         if (lang == .z or lang == .both)
-            _ = ta.search(@bitCast([:0]const u8, line));
+            _ = ta.search(buf[0..line.len :0]);
         if (lang == .c or lang == .both) {
             _ = artc.art_search(&t, line.ptr, @intCast(c_int, line.len));
         }
@@ -184,7 +184,7 @@ test "bench against libart" {
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         buf[line.len] = 0;
         if (lang == .z or lang == .both)
-            _ = try ta.delete(@bitCast([:0]const u8, line));
+            _ = try ta.delete(buf[0..line.len :0]);
         if (lang == .c or lang == .both) {
             _ = artc.art_delete(&t, line.ptr, @intCast(c_int, line.len));
         }

@@ -70,7 +70,7 @@ fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, t: var, data:
     var buf: [512:0]u8 = undefined;
     while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         buf[line.len] = 0;
-        try do(@bitCast([:0]const u8, line), linei, t, data);
+        try do(buf[0..line.len :0], linei, t, data);
         linei += 1;
     }
     return linei - 1;
@@ -530,7 +530,7 @@ test "display children" {
                     dup_letter.* = letter[0];
                 }
                 nt_letter[letter.len + j] = 0;
-                testing.expectEqual(t.insert(@bitCast([:0]const u8, nt_letter), i), .missing);
+                testing.expectEqual(t.insert(nt_letter[0 .. letter.len + j :0], i), .missing);
                 tal.free(nt_letter);
             }
         }
@@ -650,35 +650,34 @@ test "bench against StringHashMap" {
     }
 }
 
-// test "fuzz" {
-//     var lca = testing.LeakCountAllocator.init(cal);
-//     var t = Art(u8).init(&lca.allocator);
-//     // generate random keys and values
-//     var rnd = std.rand.DefaultPrng.init(0);
-//     std.rand.DefaultPrng.seed(&rnd, @intCast(u64, std.time.nanoTimestamp()));
+test "fuzz" {
+    var lca = testing.LeakCountAllocator.init(cal);
+    var t = Art(u8).init(&lca.allocator);
+    // generate random keys and values
+    var rnd = std.rand.DefaultPrng.init(@intCast(u64, std.time.nanoTimestamp()));
 
-//     const num_keys = 100000;
-//     var keys: [num_keys][:0]const u8 = undefined;
-//     var i: usize = 0;
-//     while (i < num_keys) : (i += 1) {
-//         const klen = std.rand.Random.intRangeLessThan(&rnd.random, u8, 2, 255);
-//         const key = try cal.alloc(u8, klen);
-//         for (key[0 .. klen - 1]) |*c|
-//             c.* = std.rand.Random.intRangeLessThan(&rnd.random, u8, 32, 127);
-//         key[klen - 1] = 0;
-//         keys[i] = @bitCast([:0]u8, key);
-//         _ = try t.insert(keys[i], klen);
-//     }
+    const num_keys = 100000;
+    var keys: [num_keys][:0]const u8 = undefined;
+    var i: usize = 0;
+    while (i < num_keys) : (i += 1) {
+        const klen = std.rand.Random.intRangeLessThan(&rnd.random, u8, 1, 255);
+        var key = try cal.alloc(u8, klen);
+        for (key[0 .. klen - 1]) |*c|
+            c.* = std.rand.Random.intRangeLessThan(&rnd.random, u8, 1, 255);
+        key[klen - 1] = 0;
+        keys[i] = key[0 .. key.len - 1 :0];
+        _ = try t.insert(keys[i], klen);
+    }
 
-//     for (keys) |key| {
-//         const result = t.search(@bitCast([:0]u8, key));
-//         if (result != .found) {
-//             for (key) |c| warn("{},", .{c});
-//             warn("\n", .{});
-//             warn("t.size {}\n", .{t.size});
-//         }
+    for (keys) |key| {
+        const result = t.search(key);
+        if (result != .found) {
+            for (key) |c| warn("{},", .{c});
+            warn("\n", .{});
+            warn("t.size {}\n", .{t.size});
+        }
 
-//         testing.expect(result == .found);
-//         testing.expectEqual(result.found, @truncate(u8, key.len));
-//     }
-// }
+        testing.expect(result == .found);
+        testing.expectEqual(result.found, @truncate(u8, key.len + 1));
+    }
+}
