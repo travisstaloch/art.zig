@@ -48,7 +48,7 @@ test "insert many keys" {
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
-            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
                 const result = try _t.insert(line, valAsType(T, linei));
                 testing.expect(result == .missing);
             }
@@ -61,7 +61,7 @@ test "insert many keys" {
     }
 }
 
-fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, t: var, data: var) anyerror!void, filename: []const u8, t: var, data: var) !usize {
+fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, t: anytype, data: anytype) anyerror!void, filename: []const u8, t: anytype, data: anytype) !usize {
     const f = try std.fs.cwd().openFile(filename, .{ .read = true });
     defer f.close();
 
@@ -83,7 +83,7 @@ test "insert delete many" {
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
-            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
                 const result = try _t.insert(line, valAsType(T, linei));
                 testing.expect(result == .missing);
             }
@@ -91,7 +91,7 @@ test "insert delete many" {
         const lines = try fileEachLine(doInsert, filename, &t, null);
 
         const doDelete = struct {
-            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
                 const result = try _t.delete(line);
                 testing.expect(result == .found);
                 testing.expectEqual(result.found, valAsType(T, linei));
@@ -137,7 +137,7 @@ test "insert search uuid" {
         const filename = "./testdata/uuid.txt";
 
         const doInsert = struct {
-            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
                 const result = try _t.insert(line, valAsType(T, linei));
                 testing.expect(result == .missing);
             }
@@ -145,7 +145,7 @@ test "insert search uuid" {
         const lines = try fileEachLine(doInsert, filename, &t, null);
 
         const doSearch = struct {
-            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
                 const result = _t.search(line);
 
                 testing.expect(result == .found);
@@ -173,7 +173,7 @@ const prefix_data = struct {
     expected: []const []const u8,
 };
 
-fn test_prefix_cb(n: var, data: *prefix_data, depth: usize) bool {
+fn test_prefix_cb(n: anytype, data: *prefix_data, depth: usize) bool {
     if (n.* == .leaf) {
         const k = n.*.leaf.key;
         testing.expect(data.count < data.max_count);
@@ -306,14 +306,14 @@ test "insert search" {
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
-            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
                 _ = try _t.insert(line, linei);
             }
         }._;
         const lines = try fileEachLine(doInsert, filename, &t, null);
 
         const doSearch = struct {
-            fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+            fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
                 const result = _t.search(line);
                 testing.expect(result == .found);
                 testing.expectEqual(result.found, valAsType(T, linei));
@@ -331,7 +331,7 @@ test "insert search" {
     }
 }
 
-fn sizeCb(n: var, data: *usize, depth: usize) bool {
+fn sizeCb(n: anytype, data: *usize, depth: usize) bool {
     if (n.* == .leaf) {
         data.* += 1;
     }
@@ -344,14 +344,14 @@ test "insert search delete" {
     const filename = "./testdata/words.txt";
 
     const doInsert = struct {
-        fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
             _ = try _t.insert(line, linei);
         }
     }._;
     const lines = try fileEachLine(doInsert, filename, &t, null);
 
     const doSearchDelete = struct {
-        fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
             const nlines = data;
             const result = _t.search(line);
             testing.expect(result == .found);
@@ -433,7 +433,7 @@ test "insert random delete" {
     const filename = "./testdata/words.txt";
 
     const doInsert = struct {
-        fn _(line: [:0]const u8, linei: usize, _t: var, data: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: anytype, data: anytype) anyerror!void {
             const result = try _t.insert(line, linei);
             testing.expect(result == .missing);
         }
@@ -457,7 +457,7 @@ test "insert random delete" {
     try lca.validate();
 }
 
-fn iter_cb(n: var, out: *[2]u64, depth: usize) bool {
+fn iter_cb(n: anytype, out: *[2]u64, depth: usize) bool {
     const l = n.leaf;
     const line = l.value;
     const mask = (line * (l.key[0] + l.key.len - 1));
@@ -473,7 +473,7 @@ test "insert iter" {
 
     var xor_mask: u64 = 0;
     const doInsert = struct {
-        fn _(line: [:0]const u8, linei: usize, _t: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _t: anytype, _xor_mask: anytype) anyerror!void {
             const result = try _t.insert(line, linei);
             testing.expect(result == .missing);
             _xor_mask.* ^= (linei * (line[0] + line.len));
@@ -512,7 +512,7 @@ const DummyStream = struct {
     const Self = @This();
     pub const WriteError = error{};
 
-    pub fn print(self: *Self, comptime fmt: []const u8, args: var) WriteError!usize {
+    pub fn print(self: *Self, comptime fmt: []const u8, args: anytype) WriteError!usize {
         return 0;
     }
 };
@@ -535,9 +535,9 @@ test "display children" {
             }
         }
 
-        const dummyStream = DummyStream{};
-        Art(usize).displayNode(dummyStream, t.root, 0);
-        Art(usize).displayChildren(dummyStream, t.root, 0);
+        var dummyStream = DummyStream{};
+        Art(usize).displayNode(&dummyStream, t.root, 0);
+        Art(usize).displayChildren(&dummyStream, t.root, 0);
     }
 }
 
@@ -568,7 +568,7 @@ fn defaultFor(comptime T: type) T {
         else => @compileLog(ti),
     };
 }
-fn cb(node: var, data: var, depth: usize) bool {
+fn cb(node: anytype, data: anytype, depth: usize) bool {
     const ti = @typeInfo(@TypeOf(data));
     if (ti != .Pointer)
         testing.expectEqual(defaultFor(@TypeOf(data)), data);
@@ -595,12 +595,12 @@ test "print to stream" {
     try t.printToStream(stream);
 }
 
-fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_name: []const u8, comptime del_fn_name: []const u8) !void {
+fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn_name: []const u8, comptime del_fn_name: []const u8) !void {
     const filename = "./testdata/words.txt";
 
     var timer = try std.time.Timer.start();
     const doInsert = struct {
-        fn _(line: [:0]const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _container: anytype, _xor_mask: anytype) anyerror!void {
             const append_fn = @field(_container, appen_fn_name);
             const result = append_fn(line, linei);
         }
@@ -610,7 +610,7 @@ fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_nam
 
     timer.reset();
     const doSearch = struct {
-        fn _(line: [:0]const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _container: anytype, _xor_mask: anytype) anyerror!void {
             const get_fn = @field(_container, get_fn_name);
             const result = get_fn(line);
         }
@@ -620,7 +620,7 @@ fn bench(container: var, comptime appen_fn_name: []const u8, comptime get_fn_nam
 
     timer.reset();
     const doDelete = struct {
-        fn _(line: [:0]const u8, linei: usize, _container: var, _xor_mask: var) anyerror!void {
+        fn _(line: [:0]const u8, linei: usize, _container: anytype, _xor_mask: anytype) anyerror!void {
             const del_fn = @field(_container, del_fn_name);
             const result = del_fn(line);
         }

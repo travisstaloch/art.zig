@@ -74,7 +74,7 @@ pub fn Art(comptime T: type) type {
                         .leaf, .empty => unreachable,
                     };
                 }
-                fn yieldNext(self: *ChildIterator, node: var, max: u9, loopBody: fn (self: *ChildIterator, parent: var) bool) ?*Node {
+                fn yieldNext(self: *ChildIterator, node: anytype, max: u9, loopBody: fn (self: *ChildIterator, parent: anytype) bool) ?*Node {
                     if (self.i == max) return null;
                     defer self.i += 1;
                     while (true) : (self.i += 1) {
@@ -83,18 +83,18 @@ pub fn Art(comptime T: type) type {
                     }
                     return null;
                 }
-                fn body4_16(_self: *ChildIterator, parent: var) ?*Node {
+                fn body4_16(_self: *ChildIterator, parent: anytype) ?*Node {
                     if (parent.children[_self.i] != empty_node_ref)
                         return parent.children[_self.i];
                     return null;
                 }
-                fn body48(_self: *ChildIterator, parent: var) ?*Node {
+                fn body48(_self: *ChildIterator, parent: anytype) ?*Node {
                     const idx = parent.keys[_self.i];
                     if (idx != 0 and parent.children[idx - 1] != empty_node_ref)
                         return parent.children[idx - 1];
                     return null;
                 }
-                fn body256(_self: *ChildIterator, parent: var) ?*Node {
+                fn body256(_self: *ChildIterator, parent: anytype) ?*Node {
                     if (parent.children[_self.i] != empty_node_ref)
                         return parent.children[_self.i];
                     return null;
@@ -124,13 +124,13 @@ pub fn Art(comptime T: type) type {
             const stderr = std.io.getStdErr().outStream();
             _ = t.iter(showCb, stderr);
         }
-        pub fn printToStream(t: *Tree, stream: var) !void {
+        pub fn printToStream(t: *Tree, stream: anytype) !void {
             _ = t.iter(showCb, stream);
         }
-        pub fn displayNode(stream: var, n: *Node, depth: usize) void {
+        pub fn displayNode(stream: anytype, n: *Node, depth: usize) void {
             _ = showCb(n, stream, depth);
         }
-        pub fn displayChildren(stream: var, n: *Node, depth: usize) void {
+        pub fn displayChildren(stream: anytype, n: *Node, depth: usize) void {
             var it = n.childIterator();
             while (it.next()) |child| {
                 displayNode(stream, child, depth + 1);
@@ -177,11 +177,11 @@ pub fn Art(comptime T: type) type {
             return .missing;
         }
 
-        pub fn iter(t: *Tree, comptime cb: var, data: var) bool {
+        pub fn iter(t: *Tree, comptime cb: anytype, data: anytype) bool {
             return t.recursiveIter(t.root, data, 0, cb);
         }
 
-        pub fn iterAll(t: *Tree, comptime cb: var, data: var) bool {
+        pub fn iterAll(t: *Tree, comptime cb: anytype, data: anytype) bool {
             return t.recursiveIterAll(t.root, data, 0, cb);
         }
 
@@ -189,7 +189,7 @@ pub fn Art(comptime T: type) type {
             return n.key.len > prefix.len and std.mem.startsWith(u8, n.key, prefix);
         }
 
-        pub fn iterPrefix(t: *Tree, prefix: []const u8, cb: var, data: var) bool {
+        pub fn iterPrefix(t: *Tree, prefix: []const u8, cb: anytype, data: anytype) bool {
             std.debug.assert(prefix.len == 0 or prefix[prefix.len - 1] != 0);
             var child: **Node = undefined;
             var _n: ?*Node = t.root;
@@ -512,7 +512,7 @@ pub fn Art(comptime T: type) type {
                 try t.addChild16(new_node, ref, c, child);
             }
         }
-        fn addChild16(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
+        fn addChild16(t: *Tree, n: *Node, ref: **Node, c: u8, child: anytype) Error!void {
             if (n.node16.num_children < 16) {
                 var cmp = @splat(16, c) < @as(@Vector(16, u8), n.node16.keys.*);
                 const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
@@ -542,7 +542,7 @@ pub fn Art(comptime T: type) type {
                 try t.addChild48(new_node, ref, c, child);
             }
         }
-        fn addChild48(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
+        fn addChild48(t: *Tree, n: *Node, ref: **Node, c: u8, child: anytype) Error!void {
             if (n.node48.num_children < 48) {
                 var pos: u8 = 0;
                 while (n.node48.children[pos] != &empty_node) : (pos += 1) {}
@@ -564,7 +564,7 @@ pub fn Art(comptime T: type) type {
                 try t.addChild256(new_node, ref, c, child);
             }
         }
-        fn addChild256(t: *Tree, n: *Node, ref: **Node, c: u8, child: var) Error!void {
+        fn addChild256(t: *Tree, n: *Node, ref: **Node, c: u8, child: anytype) Error!void {
             n.node256.num_children += 1;
             n.node256.children[c] = child;
         }
@@ -580,7 +580,7 @@ pub fn Art(comptime T: type) type {
         }
 
         /// calls cb in order on leaf nodes until cb returns true
-        fn recursiveIter(t: *Tree, n: *Node, data: var, depth: usize, cb: var) bool {
+        fn recursiveIter(t: *Tree, n: *Node, data: anytype, depth: usize, cb: anytype) bool {
             switch (n.*) {
                 .empty => {},
                 .leaf => return cb(n, data, depth),
@@ -596,7 +596,7 @@ pub fn Art(comptime T: type) type {
         }
 
         /// calls cb in order on all nodes (not just leaves) until cb returns true
-        fn recursiveIterAll(t: *Tree, n: *Node, data: var, depth: usize, cb: var) bool {
+        fn recursiveIterAll(t: *Tree, n: *Node, data: anytype, depth: usize, cb: anytype) bool {
             switch (n.*) {
                 .empty => {},
                 .leaf => return cb(n, data, depth),
@@ -613,9 +613,9 @@ pub fn Art(comptime T: type) type {
         }
 
         const spaces = [1]u8{' '} ** 256;
-        pub fn showCb(n: *Node, data: var, depth: usize) bool {
+        pub fn showCb(n: *Node, data: anytype, depth: usize) bool {
             const streamPrint = struct {
-                fn _(stream: var, comptime fmt: []const u8, args: var) void {
+                fn _(stream: anytype, comptime fmt: []const u8, args: anytype) void {
                     _ = stream.print(fmt, args) catch unreachable;
                 }
             }._;
