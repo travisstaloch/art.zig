@@ -247,7 +247,10 @@ pub fn Art(comptime T: type) type {
         fn deinitNode(t: *Tree, n: *Node) void {
             switch (n.*) {
                 .empty => return,
-                .leaf => {},
+                .leaf => {
+                    t.a.free(n.leaf.key);
+                    return;
+                },
                 .node4, .node16, .node48, .node256 => {
                     var it = n.childIterator();
                     while (it.next()) |child| {
