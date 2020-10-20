@@ -258,7 +258,20 @@ pub fn Art(comptime T: type) type {
                     }
                 },
             }
-            t.a.destroy(n);
+            t.deinitNodeBytes(n);
+        }
+
+        fn deinitNodeBytes(t: *Tree, n: *Node) void {
+            // destroy Node + [num_keys]u8 + [num_children]*Node
+            const bytes_ptr = @ptrCast([*]u8, n);
+            const bytes = bytes_ptr[0 .. @sizeOf(Node) + switch (n.*) {
+                .node4 => Node4.num_keys + Node4.num_children * @sizeOf(*Node),
+                .node16 => Node16.num_keys + Node16.num_children * @sizeOf(*Node),
+                .node48 => Node48.num_keys + Node48.num_children * @sizeOf(*Node),
+                .node256 => Node256.num_keys + Node256.num_children * @sizeOf(*Node),
+                else => unreachable,
+            }];
+            t.a.free(bytes);
         }
 
         fn makeLeaf(t: *Tree, key: []const u8, value: T) !*Node {
@@ -279,6 +292,7 @@ pub fn Art(comptime T: type) type {
                 else => unreachable,
             };
 
+            // allocate enough space for a Node + [num_keys]u8 + [num_children]*Node
             var bytes = try t.a.alignedAlloc(u8, @alignOf(*Node), @sizeOf(Node) +
                 1 * NodeT.num_keys + @sizeOf(*Node) * NodeT.num_children);
             const n = mem.bytesAsValue(Node, bytes[0..@sizeOf(Node)]);
@@ -511,7 +525,7 @@ pub fn Art(comptime T: type) type {
                 mem.copy(u8, new_node.node16.keys, n.node4.keys);
                 copyHeader(new_node.node16.baseNode(), n.node4.baseNode());
                 ref.* = new_node;
-                t.a.destroy(n);
+                t.deinitNodeBytes(n);
                 try t.addChild16(new_node, ref, c, child);
             }
         }
@@ -541,7 +555,7 @@ pub fn Art(comptime T: type) type {
                     new_node.node48.keys[n.node16.keys[i]] = i + 1;
                 copyHeader(new_node.baseNode(), base);
                 ref.* = new_node;
-                t.a.destroy(n);
+                t.deinitNodeBytes(n);
                 try t.addChild48(new_node, ref, c, child);
             }
         }
@@ -563,7 +577,7 @@ pub fn Art(comptime T: type) type {
                 }
                 copyHeader(new_node.baseNode(), n.baseNode());
                 ref.* = new_node;
-                t.a.destroy(n);
+                t.deinitNodeBytes(n);
                 try t.addChild256(new_node, ref, c, child);
             }
         }
@@ -731,7 +745,7 @@ pub fn Art(comptime T: type) type {
                     child_base.partial_len += base.partial_len + 1;
                 }
                 ref.* = child;
-                t.a.destroy(n);
+                t.deinitNodeBytes(n);
             }
         }
         fn removeChild16(t: *Tree, n: *Node, ref: **Node, l: **Node) Error!void {
@@ -750,7 +764,7 @@ pub fn Art(comptime T: type) type {
                 copyHeader(new_node.baseNode(), base);
                 mem.copy(u8, new_node.node4.keys, n.node16.keys[0..3]);
                 mem.copy(*Node, new_node.node4.children, n.node16.children[0..3]);
-                t.a.destroy(n);
+                t.deinitNodeBytes(n);
             }
         }
         fn removeChild48(t: *Tree, n: *Node, ref: **Node, c: u8) Error!void {
@@ -777,7 +791,7 @@ pub fn Art(comptime T: type) type {
                     }
                     if (i == 255) break;
                 }
-                t.a.destroy(n);
+                t.deinitNodeBytes(n);
             }
         }
         fn removeChild256(t: *Tree, n: *Node, ref: **Node, c: u8) Error!void {
@@ -803,7 +817,7 @@ pub fn Art(comptime T: type) type {
                     }
                     if (i == 255) break;
                 }
-                t.a.destroy(n);
+                t.deinitNodeBytes(n);
             }
         }
     };
