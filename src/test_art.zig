@@ -40,11 +40,10 @@ test "basic" {
         }
     }
 }
-
+const ta = std.testing.allocator;
 test "insert many keys" {
     inline for (ValueTypes) |T| {
-        var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(&lca.allocator);
+        var t = Art(T).init(ta);
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
@@ -57,7 +56,6 @@ test "insert many keys" {
 
         testing.expectEqual(t.size, lines);
         t.deinit();
-        try lca.validate();
     }
 }
 
@@ -78,8 +76,7 @@ fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, t: anytype, d
 
 test "insert delete many" {
     inline for (ValueTypes) |T| {
-        var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(&lca.allocator);
+        var t = Art(T).init(ta);
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
@@ -103,7 +100,6 @@ test "insert delete many" {
 
         testing.expectEqual(t.size, 0);
         t.deinit();
-        try lca.validate();
     }
 }
 const testing = std.testing;
@@ -131,8 +127,7 @@ test "long prefix" {
 
 test "insert search uuid" {
     inline for (ValueTypes) |T| {
-        var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(&lca.allocator);
+        var t = Art(T).init(ta);
 
         const filename = "./testdata/uuid.txt";
 
@@ -163,7 +158,6 @@ test "insert search uuid" {
         testing.expectEqualSlices(u8, l.?.key, "ffffcb46-a92e-4822-82af-a7190f9c1ec5\x00");
 
         t.deinit();
-        try lca.validate();
     }
 }
 
@@ -245,7 +239,7 @@ test "insert very long key" {
     var t = Art(void).init(tal);
     defer t.deinit();
 
-    const key1 = [_]u8{
+    const key1 = [_:0]u8{
         16,  0,   0,   0,   7,   10,  0,   0,   0,   2,   17,  10,  0,   0,
         0,   120, 10,  0,   0,   0,   120, 10,  0,   0,   0,   216, 10,  0,
         0,   0,   202, 10,  0,   0,   0,   194, 10,  0,   0,   0,   224, 10,
@@ -269,7 +263,7 @@ test "insert very long key" {
         255, 255, 219, 191, 198, 134, 5,   223, 212, 72,  44,  208, 250, 180,
         14,  1,   0,   0,   8,   0,
     };
-    const key2 = [_]u8{
+    const key2 = [_:0]u8{
         16,  0,   0,   0,   7,   10,  0,   0,   0,   2,   17,  10,  0,   0,   0,
         120, 10,  0,   0,   0,   120, 10,  0,   0,   0,   216, 10,  0,   0,   0,
         202, 10,  0,   0,   0,   194, 10,  0,   0,   0,   224, 10,  0,   0,   0,
@@ -301,8 +295,7 @@ test "insert very long key" {
 
 test "insert search" {
     inline for (ValueTypes) |T| {
-        var lca = std.testing.LeakCountAllocator.init(cal);
-        var t = Art(T).init(&lca.allocator);
+        var t = Art(T).init(ta);
         const filename = "./testdata/words.txt";
 
         const doInsert = struct {
@@ -327,7 +320,6 @@ test "insert search" {
         l = Art(T).maximum(t.root);
         testing.expectEqualSlices(u8, l.?.key, "zythum\x00");
         t.deinit();
-        try lca.validate();
     }
 }
 
@@ -339,8 +331,7 @@ fn sizeCb(n: anytype, data: *usize, depth: usize) bool {
 }
 
 test "insert search delete" {
-    var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = Art(usize).init(&lca.allocator);
+    var t = Art(usize).init(ta);
     const filename = "./testdata/words.txt";
 
     const doInsert = struct {
@@ -373,14 +364,11 @@ test "insert search delete" {
     testing.expectEqual(l, null);
 
     t.deinit();
-    try lca.validate();
 }
 
 const letters = [_][:0]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 test "insert search delete 2" {
-    var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    const al = &lca.allocator;
-    var t = Art(usize).init(al);
+    var t = Art(usize).init(ta);
 
     var linei: usize = 1;
     var buf: [512:0]u8 = undefined;
@@ -424,12 +412,10 @@ test "insert search delete 2" {
     testing.expectEqual(l, null);
 
     t.deinit();
-    try lca.validate();
 }
 
 test "insert random delete" {
-    var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = Art(usize).init(&lca.allocator);
+    var t = Art(usize).init(ta);
     const filename = "./testdata/words.txt";
 
     const doInsert = struct {
@@ -454,7 +440,6 @@ test "insert random delete" {
     testing.expect(result3 == .missing);
 
     t.deinit();
-    try lca.validate();
 }
 
 fn iter_cb(n: anytype, out: *[2]u64, depth: usize) bool {
@@ -467,8 +452,7 @@ fn iter_cb(n: anytype, out: *[2]u64, depth: usize) bool {
 }
 
 test "insert iter" {
-    var lca = std.testing.LeakCountAllocator.init(std.heap.c_allocator);
-    var t = Art(usize).init(&lca.allocator);
+    var t = Art(usize).init(ta);
     const filename = "./testdata/words.txt";
 
     var xor_mask: u64 = 0;
@@ -486,7 +470,6 @@ test "insert iter" {
     testing.expectEqual(nlines, out[0]);
     testing.expectEqual(xor_mask, out[1]);
     t.deinit();
-    try lca.validate();
 }
 
 test "max prefix len iter" {
@@ -632,27 +615,22 @@ fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn
 }
 
 test "bench against StringHashMap" {
-    var lca = std.testing.LeakCountAllocator.init(cal);
-
     {
-        var map = std.StringHashMap(usize).init(&lca.allocator);
+        var map = std.StringHashMap(usize).init(ta);
         warn("\nStringHashMap\n", .{});
         try bench(&map, "put", "get", "remove");
         map.deinit();
-        try lca.validate();
     }
     {
-        var t = Art(usize).init(&lca.allocator);
+        var t = Art(usize).init(ta);
         warn("\nArt\n", .{});
         try bench(&t, "insert", "search", "delete");
         t.deinit();
-        try lca.validate();
     }
 }
 
 test "fuzz" {
-    var lca = testing.LeakCountAllocator.init(cal);
-    var t = Art(u8).init(&lca.allocator);
+    var t = Art(u8).init(ta);
     // generate random keys and values
     var rnd = std.rand.DefaultPrng.init(@intCast(u64, std.time.nanoTimestamp()));
 
