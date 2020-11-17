@@ -6,7 +6,7 @@ pub fn Art(comptime T: type) type {
     return extern struct {
         root: *Node,
         size: usize,
-        a: *std.mem.Allocator,
+        allocator: *std.mem.Allocator,
 
         const Tree = @This();
         const MaxPrefixLen = 10;
@@ -67,10 +67,10 @@ pub fn Art(comptime T: type) type {
 
                 pub fn next(self: *ChildIterator) ?*Node {
                     return switch (self.parent.*) {
-                        .node4 => self.yieldNext(self.parent.node4, 4, body4_16),
-                        .node16 => self.yieldNext(self.parent.node16, 16, body4_16),
+                        .node4 => self.yieldNext(self.parent.node4, 4, bodyGeneral),
+                        .node16 => self.yieldNext(self.parent.node16, 16, bodyGeneral),
                         .node48 => self.yieldNext(self.parent.node48, 256, body48),
-                        .node256 => self.yieldNext(self.parent.node256, 256, body256),
+                        .node256 => self.yieldNext(self.parent.node256, 256, bodyGeneral),
                         .leaf, .empty => unreachable,
                     };
                 }
@@ -83,7 +83,7 @@ pub fn Art(comptime T: type) type {
                     }
                     return null;
                 }
-                fn body4_16(_self: *ChildIterator, parent: anytype) ?*Node {
+                fn bodyGeneral(_self: *ChildIterator, parent: anytype) ?*Node {
                     if (parent.children[_self.i] != empty_node_ref)
                         return parent.children[_self.i];
                     return null;
@@ -94,11 +94,6 @@ pub fn Art(comptime T: type) type {
                         return parent.children[idx - 1];
                     return null;
                 }
-                fn body256(_self: *ChildIterator, parent: anytype) ?*Node {
-                    if (parent.children[_self.i] != empty_node_ref)
-                        return parent.children[_self.i];
-                    return null;
-                }
             };
         };
 
@@ -106,7 +101,7 @@ pub fn Art(comptime T: type) type {
         pub var empty_node_ref = &empty_node;
 
         pub fn init(a: *std.mem.Allocator) Tree {
-            return .{ .root = empty_node_ref, .size = 0, .a = a };
+            return .{ .root = empty_node_ref, .size = 0, .allocator = a };
         }
         pub fn deinit(t: *Tree) void {
             t.deinitNode(t.root);
@@ -185,6 +180,75 @@ pub fn Art(comptime T: type) type {
             return t.recursiveIterAll(t.root, data, 0, cb);
         }
 
+        const LeafIterator = struct {
+            child_it: Node.ChildIterator,
+            prev_child_its: std.ArrayList(Node.ChildIterator),
+            // pub fn next_(self: *LeafIterator) ?Leaf {
+
+            //     while (self.child_it.next()) |child| {
+            //         std.debug.print("LeafIterator.next child {}\n", .{child});
+
+            //         switch (child.*) {
+            //             .leaf => return child.leaf,
+            //             .empty => return null,
+            //             else => {
+            //                 // const child_it = self.child_it;
+            //                 // defer self.child_it = child_it;
+            //                 self.child_it = child.childIterator();
+            //                 return self.next();
+            //             },
+            //         }
+            //     }
+            //     return null;
+            // }
+
+            // fn recursiveIter(t: *Tree, n: *Node, data: anytype, depth: usize, cb: anytype) bool {
+            pub fn next(self: *LeafIterator) Error!?Leaf {
+                // const child = self.child_it.next() orelse if (self.prev_child_its.items.len > 0)
+                // // self.prev_child_it.next()
+                // blk2: {
+                //     self.child_it = self.prev_child_its.pop();
+                //     break :blk2 self.child_it.next() orelse return null;
+                // } else
+                //     return null;
+                const child = self.child_it.next() orelse return null;
+                // const child_it = self.child_it;
+                // defer self.child_it = child_it;
+                std.debug.print("LeafIterator.next child {} prev_child_its len {}\n", .{ child, self.prev_child_its.items.len });
+                // std.debug.print("LeafIterator.next child {}\nchild_it {}\n", .{ child, self.child_it });
+                switch (child.*) {
+                    .empty => {},
+                    .leaf => {
+                        // defer self.child_it = child_it;
+                        return child.leaf;
+                    },
+                    .node4, .node16, .node48, .node256 => {
+                        // var cli = LeafIterator {.child_it = child.childIterator()};
+                        // // while (ci.next()) |child2| {
+                        // //     if (t.recursiveIter(child, data, depth + 1, cb))
+                        // //         return true;
+                        // // }
+                        // return cli.next();
+                        // defer self.child_it = child_it;
+                        _ = try self.prev_child_its.append(self.child_it);
+                        self.child_it = child.childIterator();
+                        return try self.next();
+                        // var li = LeafIterator{ .child_it = child.childIterator() };
+                        // return li.next();
+                    },
+                }
+                if (self.prev_child_its.items.len > 0) {
+                    self.child_it = self.prev_child_its.pop();
+                    return try self.next();
+                }
+                return null;
+            }
+        };
+
+        pub fn iterator(t: *Tree) LeafIterator {
+            return .{ .child_it = t.root.childIterator(), .prev_child_its = std.ArrayList(Node.ChildIterator).init(t.allocator) };
+        }
+
         fn leafPrefixMatches(n: Leaf, prefix: []const u8) bool {
             return n.key.len > prefix.len and std.mem.startsWith(u8, n.key, prefix);
         }
@@ -247,10 +311,7 @@ pub fn Art(comptime T: type) type {
         fn deinitNode(t: *Tree, n: *Node) void {
             switch (n.*) {
                 .empty => return,
-                .leaf => {
-                    t.a.free(n.leaf.key);
-                    return;
-                },
+                .leaf => {},
                 .node4, .node16, .node48, .node256 => {
                     var it = n.childIterator();
                     while (it.next()) |child| {
@@ -269,17 +330,19 @@ pub fn Art(comptime T: type) type {
                 .node16 => Node16.num_keys + Node16.num_children * @sizeOf(*Node),
                 .node48 => Node48.num_keys + Node48.num_children * @sizeOf(*Node),
                 .node256 => Node256.num_keys + Node256.num_children * @sizeOf(*Node),
+                .leaf => {
+                    t.allocator.destroy(n);
+                    return;
+                },
                 else => unreachable,
             }];
-            t.a.free(bytes);
+            t.allocator.free(bytes);
         }
 
+        // don't allocate for the key. the client owns the keys
         fn makeLeaf(t: *Tree, key: []const u8, value: T) !*Node {
-            const bytes = try t.a.alignedAlloc(u8, @alignOf(*Node), @sizeOf(Node) + key.len);
-            const n = mem.bytesAsValue(Node, bytes[0..@sizeOf(Node)]);
-            const key_bytes = bytes[@sizeOf(Node)..];
-            mem.copy(u8, key_bytes, key);
-            n.* = .{ .leaf = .{ .key = key_bytes, .value = value } };
+            const n = try t.allocator.create(Node);
+            n.* = .{ .leaf = .{ .key = key, .value = value } };
             return n;
         }
 
@@ -293,7 +356,7 @@ pub fn Art(comptime T: type) type {
             };
 
             // allocate enough space for a Node + [num_keys]u8 + [num_children]*Node
-            var bytes = try t.a.alignedAlloc(u8, @alignOf(*Node), @sizeOf(Node) +
+            var bytes = try t.allocator.alignedAlloc(u8, @alignOf(*Node), @sizeOf(Node) +
                 1 * NodeT.num_keys + @sizeOf(*Node) * NodeT.num_children);
             const n = mem.bytesAsValue(Node, bytes[0..@sizeOf(Node)]);
             bytes = bytes[@sizeOf(Node)..];
