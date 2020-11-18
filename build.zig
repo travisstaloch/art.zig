@@ -10,8 +10,8 @@ pub fn build(b: *Builder) void {
 
     var main_tests = b.addTest("src/test_art.zig");
     main_tests.setBuildMode(mode);
-    // main_tests.filter = "basic";
-    main_tests.setBuildMode(std.builtin.Mode.ReleaseFast);
+    // main_tests.filter = "bench";
+    // main_tests.setBuildMode(std.builtin.Mode.ReleaseFast);
     main_tests.linkLibC();
 
     const test_step = b.step("test", "Run library tests");
