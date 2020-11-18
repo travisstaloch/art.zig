@@ -106,7 +106,7 @@ pub fn Art(comptime T: type) type {
         pub fn deinit(t: *Tree) void {
             t.deinitNode(t.root);
         }
-        pub const Result = union(enum) { missing, found: T };
+        pub const Result = union(enum) { missing, found: Leaf };
         pub fn insert(t: *Tree, key: [:0]const u8, value: T) !Result {
             var _key = key;
             _key.len += 1;
@@ -150,7 +150,7 @@ pub fn Art(comptime T: type) type {
                 if (n.* == .leaf) {
                     // Check if the expanded path matches
                     if (std.mem.eql(u8, n.leaf.key, _key)) {
-                        return Result{ .found = n.leaf.value };
+                        return Result{ .found = n.leaf };
                     }
                     return .missing;
                 }
@@ -178,75 +178,6 @@ pub fn Art(comptime T: type) type {
 
         pub fn iterAll(t: *Tree, comptime cb: anytype, data: anytype) bool {
             return t.recursiveIterAll(t.root, data, 0, cb);
-        }
-
-        const LeafIterator = struct {
-            child_it: Node.ChildIterator,
-            prev_child_its: std.ArrayList(Node.ChildIterator),
-            // pub fn next_(self: *LeafIterator) ?Leaf {
-
-            //     while (self.child_it.next()) |child| {
-            //         std.debug.print("LeafIterator.next child {}\n", .{child});
-
-            //         switch (child.*) {
-            //             .leaf => return child.leaf,
-            //             .empty => return null,
-            //             else => {
-            //                 // const child_it = self.child_it;
-            //                 // defer self.child_it = child_it;
-            //                 self.child_it = child.childIterator();
-            //                 return self.next();
-            //             },
-            //         }
-            //     }
-            //     return null;
-            // }
-
-            // fn recursiveIter(t: *Tree, n: *Node, data: anytype, depth: usize, cb: anytype) bool {
-            pub fn next(self: *LeafIterator) Error!?Leaf {
-                // const child = self.child_it.next() orelse if (self.prev_child_its.items.len > 0)
-                // // self.prev_child_it.next()
-                // blk2: {
-                //     self.child_it = self.prev_child_its.pop();
-                //     break :blk2 self.child_it.next() orelse return null;
-                // } else
-                //     return null;
-                const child = self.child_it.next() orelse return null;
-                // const child_it = self.child_it;
-                // defer self.child_it = child_it;
-                std.debug.print("LeafIterator.next child {} prev_child_its len {}\n", .{ child, self.prev_child_its.items.len });
-                // std.debug.print("LeafIterator.next child {}\nchild_it {}\n", .{ child, self.child_it });
-                switch (child.*) {
-                    .empty => {},
-                    .leaf => {
-                        // defer self.child_it = child_it;
-                        return child.leaf;
-                    },
-                    .node4, .node16, .node48, .node256 => {
-                        // var cli = LeafIterator {.child_it = child.childIterator()};
-                        // // while (ci.next()) |child2| {
-                        // //     if (t.recursiveIter(child, data, depth + 1, cb))
-                        // //         return true;
-                        // // }
-                        // return cli.next();
-                        // defer self.child_it = child_it;
-                        _ = try self.prev_child_its.append(self.child_it);
-                        self.child_it = child.childIterator();
-                        return try self.next();
-                        // var li = LeafIterator{ .child_it = child.childIterator() };
-                        // return li.next();
-                    },
-                }
-                if (self.prev_child_its.items.len > 0) {
-                    self.child_it = self.prev_child_its.pop();
-                    return try self.next();
-                }
-                return null;
-            }
-        };
-
-        pub fn iterator(t: *Tree) LeafIterator {
-            return .{ .child_it = t.root.childIterator(), .prev_child_its = std.ArrayList(Node.ChildIterator).init(t.allocator) };
         }
 
         fn leafPrefixMatches(n: Leaf, prefix: []const u8) bool {
@@ -391,7 +322,7 @@ pub fn Art(comptime T: type) type {
             if (n.* == .leaf) {
                 var l = n.*.leaf;
                 if (mem.eql(u8, l.key, key)) {
-                    const result = Result{ .found = l.value };
+                    const result = Result{ .found = l };
                     n.*.leaf.value = value;
                     return result;
                 }
@@ -741,7 +672,7 @@ pub fn Art(comptime T: type) type {
             if (n.* == .leaf) {
                 const l = n.*.leaf;
                 if (mem.eql(u8, n.*.leaf.key, key)) {
-                    const result = Result{ .found = l.value };
+                    const result = Result{ .found = l };
                     t.deinitNode(n);
                     ref.* = empty_node_ref;
                     return result;
@@ -763,7 +694,7 @@ pub fn Art(comptime T: type) type {
                 const l = childp.*.leaf;
                 if (mem.eql(u8, l.key, key)) {
                     try t.removeChild(n, ref, key[depth], child);
-                    return Result{ .found = l.value };
+                    return Result{ .found = l };
                 }
                 return .missing;
             } else return try t.recursiveDelete(child.*, child, key, depth + 1);
