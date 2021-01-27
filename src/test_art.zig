@@ -85,9 +85,9 @@ fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, container: an
     defer f.close();
 
     var linei: usize = 1;
-    const stream = &f.inStream();
+    const reader = &f.reader();
     var buf: [512:0]u8 = undefined;
-    while (try stream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
+    while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         buf[line.len] = 0;
         try do(buf[0..line.len :0], linei, container, data, T);
         linei += 1;
@@ -578,13 +578,13 @@ test "iter data types" {
 test "print to stream" {
     var list = std.ArrayList(u8).init(tal);
     defer list.deinit();
-    var stream = &list.outStream();
+    var writer = &list.writer();
     var t = Art(usize).init(tal);
     defer t.deinit();
     for (letters) |l| {
         _ = try t.insert(l, 0);
     }
-    try t.printToStream(stream);
+    try t.printToStream(writer);
 }
 
 fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn_name: []const u8, comptime del_fn_name: []const u8) !void {
