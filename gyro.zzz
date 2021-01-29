@@ -1,0 +1,14 @@
+pkgs:
+  art:
+    version: 0.0.0
+    description: "An Adaptive Radix Tree ported from c to zig"
+    license: MIT
+    source_url: "https://github.com/travisstaloch/art.zig"
+    root: src/art.zig
+    files:
+      readme.md
+      LICENSE
+      build.zig
+      src/*.zig
+      testdata/*
+      testdata/scripts/*
