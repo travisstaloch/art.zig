@@ -277,7 +277,7 @@ pub fn Art(comptime T: type) type {
             return n;
         }
 
-        fn allocNode(t: *Tree, comptime Tag: @TagType(Node)) !*Node {
+        fn allocNode(t: *Tree, comptime Tag: std.meta.Tag(Node)) !*Node {
             const NodeT = switch (Tag) {
                 .node4 => Node4,
                 .node16 => Node16,
@@ -633,34 +633,34 @@ pub fn Art(comptime T: type) type {
 
             switch (n.*) {
                 .empty => streamPrint(data, "empty\n", .{}),
-                .leaf => streamPrint(data, "{}-> {} = {}\n", .{ spaces[0 .. depth * 2], n.leaf.key, n.leaf.value }),
-                .node4 => streamPrint(data, "{}4   [{}] ({}) {} children\n", .{
+                .leaf => streamPrint(data, "{s}-> {s} = {}\n", .{ spaces[0 .. depth * 2], n.leaf.key, n.leaf.value }),
+                .node4 => streamPrint(data, "{s}4   [{s}] ({s}) {} children\n", .{
                     spaces[0 .. depth * 2],
                     &n.node4.keys.*,
                     n.node4.partial[0..math.min(MaxPrefixLen, n.node4.partial_len)],
                     n.node4.num_children,
                 }),
-                .node16 => streamPrint(data, "{}16  [{}] ({}) {} children\n", .{
+                .node16 => streamPrint(data, "{s}16  [{s}] ({s}) {} children\n", .{
                     spaces[0 .. depth * 2],
                     n.node16.keys.*,
                     n.node16.partial[0..math.min(MaxPrefixLen, n.node16.partial_len)],
                     n.node16.num_children,
                 }),
                 .node48 => |nn| {
-                    streamPrint(data, "{}48  [", .{spaces[0 .. depth * 2]});
+                    streamPrint(data, "{s}48  [", .{spaces[0 .. depth * 2]});
                     for (nn.keys) |c, i| {
                         if (c != 0)
                             streamPrint(data, "{c}", .{@truncate(u8, i)});
                     }
-                    streamPrint(data, "] ({}) {} children\n", .{ nn.partial, n.node48.num_children });
+                    streamPrint(data, "] ({s}) {} children\n", .{ nn.partial, n.node48.num_children });
                 },
                 .node256 => |nn| {
-                    streamPrint(data, "{}256 [", .{spaces[0 .. depth * 2]});
+                    streamPrint(data, "{s}256 [", .{spaces[0 .. depth * 2]});
                     for (nn.children) |child, i| {
                         if (child != &empty_node)
                             streamPrint(data, "{c}", .{@truncate(u8, i)});
                     }
-                    streamPrint(data, "] ({}) {} children\n", .{ nn.partial, n.node256.num_children });
+                    streamPrint(data, "] ({s}) {} children\n", .{ nn.partial, n.node256.num_children });
                 },
             }
             return false;
@@ -835,7 +835,7 @@ fn replUsage(input: []const u8) void {
         \\
     ;
     if (input.len > 0) {
-        warn("invalid input: '{}'\n", .{input});
+        warn("invalid input: '{s}'\n", .{input});
     }
     warn(usage, .{});
 }
@@ -866,7 +866,7 @@ pub fn main() !void {
         }
         var res: ?Art(usize).Result = null;
         var buf2: [256]u8 = undefined;
-        var key = try std.fmt.bufPrint(&buf2, "{}\x00", .{parts[0]});
+        var key = try std.fmt.bufPrint(&buf2, "{s}\x00", .{parts[0]});
         if (delete) {
             res = try t.delete(key);
         } else {
@@ -875,12 +875,11 @@ pub fn main() !void {
             } else if (i == 2) {
                 const n = try std.fmt.parseInt(usize, parts[1], 10);
                 res = try t.insert(key, n);
-            } else
-                replUsage(input);
+            } else replUsage(input);
         }
         if (res) |result| {
             var ouput: []const u8 = if (result == .missing) "insert:"[0..] else "update:"[0..];
-            warn("{} size {}\n", .{ ouput, t.size });
+            warn("{s} size {}\n", .{ ouput, t.size });
             try t.print();
         }
         warn("> ", .{});
