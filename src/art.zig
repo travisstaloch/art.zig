@@ -116,7 +116,7 @@ pub fn Art(comptime T: type) type {
         }
 
         pub fn print(t: *Tree) !void {
-            const stderr = std.io.getStdErr().outStream();
+            const stderr = std.io.getStdErr().writer();
             _ = t.iter(showCb, stderr);
         }
         pub fn printToStream(t: *Tree, stream: anytype) !void {
@@ -575,8 +575,9 @@ pub fn Art(comptime T: type) type {
                 try t.addChild256(new_node, ref, c, child);
             }
         }
-        fn addChild256(t: *Tree, n: *Node, ref: **Node, c: u8, child: anytype) Error!void {
-            n.node256.num_children += 1;
+        fn addChild256(t: *Tree, n: *Node, _: **Node, c: u8, child: anytype) Error!void {
+            _ = child;
+            _ = t;
             n.node256.children[c] = child;
         }
         fn checkPrefix(n: *BaseNode, key: []const u8, depth: usize) usize {
@@ -660,7 +661,7 @@ pub fn Art(comptime T: type) type {
                         if (child != &empty_node)
                             streamPrint(data, "{c}", .{@truncate(u8, i)});
                     }
-                    streamPrint(data, "] ({s}) {} children\n", .{ nn.partial, n.node256.num_children });
+                    streamPrint(data, "] ({s}) ? children\n", .{nn.partial});
                 },
             }
             return false;
@@ -842,7 +843,7 @@ fn replUsage(input: []const u8) void {
 
 pub fn main() !void {
     var t = Art(usize).init(std.heap.c_allocator);
-    const stdin = std.io.getStdIn().inStream();
+    const stdin = std.io.getStdIn().reader();
     var buf: [256]u8 = undefined;
     replUsage("");
     warn("> ", .{});
@@ -866,7 +867,7 @@ pub fn main() !void {
         }
         var res: ?Art(usize).Result = null;
         var buf2: [256]u8 = undefined;
-        var key = try std.fmt.bufPrint(&buf2, "{s}\x00", .{parts[0]});
+        var key = try std.fmt.bufPrintZ(&buf2, "{s}\x00", .{parts[0]});
         if (delete) {
             res = try t.delete(key);
         } else {
