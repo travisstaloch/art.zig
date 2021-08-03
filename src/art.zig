@@ -389,9 +389,8 @@ pub fn Art(comptime T: type) type {
             }
             return idx;
         }
-        fn copyHeader(dest: *BaseNode, src: *BaseNode, dest_tag: NodeType) void {
-            if (dest_tag != .node256)
-                dest.num_children = src.num_children;
+        fn copyHeader(dest: *BaseNode, src: *BaseNode) void {
+            dest.num_children = src.num_children;
             dest.partial_len = src.partial_len;
             mem.copy(u8, &dest.partial, src.partial[0..math.min(max_prefix_len, src.partial_len)]);
         }
@@ -514,7 +513,7 @@ pub fn Art(comptime T: type) type {
                 var new_node = try t.allocNode(.node16);
                 mem.copy(?*Node, new_node.node16.children, n.node4.children);
                 mem.copy(u8, new_node.node16.keys, n.node4.keys);
-                copyHeader(new_node.node16.baseNode(), n.node4.baseNode(), @as(NodeType, new_node.*));
+                copyHeader(new_node.node16.baseNode(), n.node4.baseNode());
                 ref.* = new_node;
                 t.deinitNodeBytes(n);
                 try t.addChild16(new_node, ref, c, child);
@@ -544,7 +543,7 @@ pub fn Art(comptime T: type) type {
                 var i: u8 = 0;
                 while (i < base.num_children) : (i += 1)
                     new_node.node48.keys[n.node16.keys[i]] = i + 1;
-                copyHeader(new_node.baseNode(), base, @as(NodeType, new_node.*));
+                copyHeader(new_node.baseNode(), base);
                 ref.* = new_node;
                 t.deinitNodeBytes(n);
                 try t.addChild48(new_node, ref, c, child);
@@ -567,17 +566,21 @@ pub fn Art(comptime T: type) type {
                     if (old_keys[i] != 0)
                         new_node.node256.children[i] = old_children[old_keys[i] - 1];
                 }
-                copyHeader(new_node.baseNode(), n.baseNode(), @as(NodeType, new_node.*));
+                copyHeader(new_node.baseNode(), n.baseNode());
                 ref.* = new_node;
                 t.deinitNodeBytes(n);
                 try t.addChild256(new_node, ref, c, child);
             }
         }
+
+        extern fn @"llvm.usub.sat.i8"(u8, u8) u8;
         fn addChild256(t: *Tree, _n: ?*Node, _: *?*Node, c: u8, child: anytype) Error!void {
             _ = child;
             _ = t;
             const n = _n orelse return error.Missing;
             n.node256.children[c] = child;
+            // prevent overflow with saturating addition
+            n.node256.num_children = @"llvm.usub.sat.i8"(n.node256.num_children, 1);
         }
         fn checkPrefix(n: *BaseNode, key: []const u8, depth: usize) usize {
             // FIXME should this be key.len - 1?
@@ -664,7 +667,7 @@ pub fn Art(comptime T: type) type {
                         if (child != null)
                             streamPrint(data, "{c}", .{@truncate(u8, i)});
                     }
-                    streamPrint(data, "] ({s}) ? children\n", .{nn.partial});
+                    streamPrint(data, "] ({s}) {} children\n", .{ nn.partial, n.node256.num_children });
                 },
             }
             return false;
@@ -761,7 +764,7 @@ pub fn Art(comptime T: type) type {
             if (base.num_children == 3) {
                 const new_node = try t.allocNode(.node4);
                 ref.* = new_node;
-                copyHeader(new_node.baseNode(), base, @as(NodeType, new_node.*));
+                copyHeader(new_node.baseNode(), base);
                 mem.copy(u8, new_node.node4.keys, n.node16.keys[0..3]);
                 mem.copy(?*Node, new_node.node4.children, n.node16.children[0..3]);
                 t.deinitNodeBytes(n);
@@ -779,7 +782,7 @@ pub fn Art(comptime T: type) type {
             if (base.num_children == 12) {
                 const new_node = try t.allocNode(.node16);
                 ref.* = new_node;
-                copyHeader(new_node.baseNode(), base, @as(NodeType, new_node.*));
+                copyHeader(new_node.baseNode(), base);
 
                 var childi: u8 = 0;
                 var i: u8 = 0;
@@ -806,7 +809,7 @@ pub fn Art(comptime T: type) type {
             if (base.num_children == 37) {
                 const new_node = try t.allocNode(.node48);
                 ref.* = new_node;
-                copyHeader(new_node.baseNode(), base, @as(NodeType, new_node.*));
+                copyHeader(new_node.baseNode(), base);
 
                 var pos: u8 = 0;
                 var i: u8 = 0;
