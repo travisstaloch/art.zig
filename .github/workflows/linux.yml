@@ -23,4 +23,4 @@ jobs:
       with:
         version: master
 
-    - run: zig build
+    - run: zig build test
