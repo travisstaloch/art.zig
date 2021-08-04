@@ -3,6 +3,10 @@ const mem = std.mem;
 const math = std.math;
 
 pub const Error = error{ OutOfMemory, NoMinimum, Missing };
+extern fn @"llvm.uadd.sat.i8"(u8, u8) u8;
+inline fn sat_add_u8(a: u8, b: u8) u8 {
+    return @"llvm.uadd.sat.i8"(a, b);
+}
 
 pub fn Art(comptime T: type) type {
     return extern struct {
@@ -573,15 +577,15 @@ pub fn Art(comptime T: type) type {
             }
         }
 
-        extern fn @"llvm.usub.sat.i8"(u8, u8) u8;
         fn addChild256(t: *Tree, _n: ?*Node, _: *?*Node, c: u8, child: anytype) Error!void {
             _ = child;
             _ = t;
             const n = _n orelse return error.Missing;
             n.node256.children[c] = child;
             // prevent overflow with saturating addition
-            n.node256.num_children = @"llvm.usub.sat.i8"(n.node256.num_children, 1);
+            n.node256.num_children = sat_add_u8(n.node256.num_children, 1);
         }
+
         fn checkPrefix(n: *BaseNode, key: []const u8, depth: usize) usize {
             // FIXME should this be key.len - 1?
             const max_cmp = math.min(math.min(n.partial_len, max_prefix_len), key.len - depth);
