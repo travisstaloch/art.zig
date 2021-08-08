@@ -60,12 +60,12 @@ fn free_keys(container: anytype) !void {
 }
 
 const doInsert = struct {
-    fn _(line: [:0]const u8, linei: usize, container: anytype, data: anytype, comptime T: type) anyerror!void {
+    fn func(line: [:0]const u8, linei: usize, container: anytype, _: anytype, comptime T: type) anyerror!void {
         const line_ = try container.allocator.dupeZ(u8, line);
         const result = try container.insert(line_, valAsType(T, linei));
         try testing.expect(result == .missing);
     }
-}._;
+}.func;
 
 test "insert many keys" {
     inline for (ValueTypes) |T| {
@@ -156,6 +156,7 @@ test "insert search uuid" {
 
         const doSearch = struct {
             fn func(line: [:0]const u8, linei: usize, _t: anytype, data: anytype, comptime _: type) anyerror!void {
+                _ = data;
                 const result = _t.search(line);
 
                 try testing.expect(result == .found);
@@ -322,6 +323,7 @@ test "insert search" {
 
         const doSearch = struct {
             fn func(line: [:0]const u8, linei: usize, _t: anytype, data: anytype, comptime _: type) anyerror!void {
+                _ = data;
                 const result = _t.search(line);
                 try testing.expect(result == .found);
                 try testing.expectEqual(result.found.value, valAsType(T, linei));
@@ -593,19 +595,19 @@ fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn
 
     var timer = try std.time.Timer.start();
     const doInsert_ = struct {
-        fn _(line: [:0]const u8, linei: usize, _container: anytype, _xor_mask: anytype, comptime U: type) anyerror!void {
+        fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
             _ = U;
             const append_fn = @field(_container, appen_fn_name);
             const line_ = try _container.allocator.dupeZ(u8, line);
             _ = try append_fn(line_, linei);
         }
-    }._;
+    }.func;
     _ = try fileEachLine(doInsert_, filename, container, null, usize);
     const t1 = timer.read();
 
     timer.reset();
     const doSearch = struct {
-        fn _(line: [:0]const u8, linei: usize, _container: anytype, _xor_mask: anytype, comptime U: type) anyerror!void {
+        fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
             _ = U;
             _ = linei;
             const get_fn = @field(_container, get_fn_name);
@@ -617,13 +619,13 @@ fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn
                 try testing.expect(result != null);
             }
         }
-    }._;
+    }.func;
     _ = try fileEachLine(doSearch, filename, container, null, usize);
     const t2 = timer.read();
 
     timer.reset();
     const doDelete = struct {
-        fn _(line: [:0]const u8, linei: usize, _container: anytype, _xor_mask: anytype, comptime U: type) anyerror!void {
+        fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
             _ = U;
             _ = linei;
             const del_fn = @field(_container, del_fn_name);
@@ -636,7 +638,7 @@ fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn
                 try testing.expect(result);
             }
         }
-    }._;
+    }.func;
     _ = try fileEachLine(doDelete, filename, container, null, usize);
     const t3 = timer.read();
 
