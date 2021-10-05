@@ -3,10 +3,6 @@ const mem = std.mem;
 const math = std.math;
 
 pub const Error = error{ OutOfMemory, NoMinimum, Missing };
-extern fn @"llvm.uadd.sat.i8"(u8, u8) u8;
-inline fn sat_add_u8(a: u8, b: u8) u8 {
-    return @"llvm.uadd.sat.i8"(a, b);
-}
 
 pub fn Art(comptime T: type) type {
     return extern struct {
@@ -583,7 +579,7 @@ pub fn Art(comptime T: type) type {
             const n = _n orelse return error.Missing;
             n.node256.children[c] = child;
             // prevent overflow with saturating addition
-            n.node256.num_children = sat_add_u8(n.node256.num_children, 1);
+            n.node256.num_children = n.node256.num_children +| 1;
         }
 
         fn checkPrefix(n: *BaseNode, key: []const u8, depth: usize) usize {
@@ -869,7 +865,7 @@ pub fn main() !void {
             t = Art(usize).init(std.heap.c_allocator);
             continue;
         }
-        var itr = std.mem.split(input, " ");
+        var itr = std.mem.split(u8, input, " ");
         var i: u8 = 0;
         var delete = false;
         while (itr.next()) |part| : (i += 1) {
