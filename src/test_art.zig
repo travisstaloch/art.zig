@@ -679,10 +679,11 @@ test "fuzz" {
     var keys: [num_keys][:0]const u8 = undefined;
     var i: usize = 0;
     while (i < num_keys) : (i += 1) {
-        const klen = std.rand.Random.intRangeLessThan(&rnd.random, u8, 1, 255);
+        const klen = std.rand.Random.intRangeLessThan(rnd.random(), u8, 1, 255);
+
         var key = try allr.allocSentinel(u8, klen, 0);
         for (key) |*c|
-            c.* = std.rand.Random.intRangeLessThan(&rnd.random, u8, 1, 255);
+            c.* = std.rand.Random.intRangeLessThan(rnd.random(), u8, 1, 255);
         keys[i] = key;
         _ = try t.insert(key, klen);
     }
