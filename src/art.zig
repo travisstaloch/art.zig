@@ -8,7 +8,7 @@ pub fn Art(comptime T: type) type {
     return extern struct {
         root: ?*Node,
         size: usize,
-        allocator: *std.mem.Allocator,
+        allocator: *const std.mem.Allocator,
 
         const Tree = @This();
         const max_prefix_len = 10;
@@ -99,7 +99,7 @@ pub fn Art(comptime T: type) type {
             };
         };
 
-        pub fn init(a: *std.mem.Allocator) Tree {
+        pub fn init(a: *const std.mem.Allocator) Tree {
             return .{ .root = null, .size = 0, .allocator = a };
         }
         pub fn deinit(t: *Tree) void {
@@ -827,7 +827,7 @@ pub fn Art(comptime T: type) type {
     };
 }
 
-const warn = std.debug.warn;
+const warn = std.log.warn;
 fn replUsage(input: []const u8) void {
     const usage =
         \\ usage - command <command> 
@@ -851,7 +851,7 @@ fn replUsage(input: []const u8) void {
 }
 
 pub fn main() !void {
-    var t = Art(usize).init(std.heap.c_allocator);
+    var t = Art(usize).init(&std.heap.c_allocator);
     const stdin = std.io.getStdIn().reader();
     var buf: [256]u8 = undefined;
     replUsage("");
@@ -862,7 +862,7 @@ pub fn main() !void {
             break;
         } else if (std.mem.eql(u8, input, ":r")) {
             t.deinit();
-            t = Art(usize).init(std.heap.c_allocator);
+            t = Art(usize).init(&std.heap.c_allocator);
             continue;
         }
         var itr = std.mem.split(u8, input, " ");

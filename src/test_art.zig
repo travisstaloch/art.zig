@@ -3,8 +3,8 @@ const mem = std.mem;
 const art = @import("art.zig");
 const Art = art.Art;
 
-const tal = std.testing.allocator;
-const warn = std.debug.warn;
+const tal = &std.testing.allocator;
+const warn = std.log.warn;
 
 // set to test against many value types (increases test run time)
 const test_all_ValueTypes = false;
@@ -516,13 +516,13 @@ test "display children" {
     for (letter_ranges) |range| {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        const allr = &arena.allocator;
+        const allr = &arena.allocator();
         var t = Art(usize).init(allr);
         defer t.deinit();
         for (letters[range[0]..range[1]]) |word, i| {
             var j: u8 = 0;
             while (j < 10) : (j += 1) {
-                const nt_letter = try allr.allocSentinel(u8, word.len + j, 0);
+                const nt_letter = try arena.allocator().allocSentinel(u8, word.len + j, 0);
                 mem.set(u8, nt_letter, word[0]);
                 try testing.expectEqual(t.insert(nt_letter, i), .missing);
             }
@@ -579,7 +579,7 @@ test "iter data types" {
 }
 
 test "print to stream" {
-    var list = std.ArrayList(u8).init(tal);
+    var list = std.ArrayList(u8).init(tal.*);
     defer list.deinit();
     var writer = &list.writer();
     var t = Art(usize).init(tal);
@@ -648,16 +648,16 @@ fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn
 
 test "bench against StringHashMap" {
     {
-        var arena = std.heap.ArenaAllocator.init(tal);
-        var aa = &arena.allocator;
-        var map = std.StringHashMap(usize).init(aa);
+        var arena = std.heap.ArenaAllocator.init(tal.*);
+        var aa = &arena.allocator();
+        var map = std.StringHashMap(usize).init(aa.*);
         defer arena.deinit();
         warn("\nStringHashMap\n", .{});
         try bench(&map, "put", "get", "remove");
     }
     {
-        var arena = std.heap.ArenaAllocator.init(tal);
-        var aa = &arena.allocator;
+        var arena = std.heap.ArenaAllocator.init(tal.*);
+        var aa = &arena.allocator();
         var t = Art(usize).init(aa);
         defer arena.deinit();
         warn("\nArt\n", .{});
@@ -671,9 +671,8 @@ test "fuzz" {
     // generate random keys and values
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allr = &arena.allocator;
     var rnd = std.rand.DefaultPrng.init(@intCast(u64, std.time.nanoTimestamp()));
-    var found = std.StringHashMap(void).init(allr);
+    var found = std.StringHashMap(void).init(arena.allocator());
 
     const num_keys = 100000;
     var keys: [num_keys][:0]const u8 = undefined;
@@ -681,7 +680,7 @@ test "fuzz" {
     while (i < num_keys) : (i += 1) {
         const klen = std.rand.Random.intRangeLessThan(rnd.random(), u8, 1, 255);
 
-        var key = try allr.allocSentinel(u8, klen, 0);
+        var key = try arena.allocator().allocSentinel(u8, klen, 0);
         for (key) |*c|
             c.* = std.rand.Random.intRangeLessThan(rnd.random(), u8, 1, 255);
         keys[i] = key;
