@@ -32,7 +32,7 @@ test "compare node keys" {
     var ta = Art(usize).init(a);
     defer ta.deinit();
 
-    const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
+    const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .mode = .read_only });
     defer f.close();
 
     var linei: usize = 1;
@@ -73,7 +73,7 @@ test "compare tree after delete" {
     var ta = Art(usize).init(a);
     defer ta.deinit();
 
-    const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .read = true });
+    const f = try std.fs.cwd().openFile("./testdata/words.txt", .{ .mode = .read_only });
     defer f.close();
 
     var linei: usize = 1;
@@ -147,7 +147,7 @@ test "bench against libart" {
 
     const filename = "./testdata/words.txt";
 
-    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
+    const f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
     defer f.close();
 
     var linei: usize = 1;

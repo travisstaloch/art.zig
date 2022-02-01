@@ -81,7 +81,7 @@ test "insert many keys" {
 }
 
 fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, container: anytype, data: anytype, comptime T: type) anyerror!void, filename: []const u8, container: anytype, data: anytype, comptime T: type) !usize {
-    const f = try std.fs.cwd().openFile(filename, .{ .read = true });
+    const f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
     defer f.close();
 
     var linei: usize = 1;
