@@ -76,7 +76,7 @@ pub fn Art(comptime T: type) type {
                         .leaf => unreachable,
                     };
                 }
-                fn yieldNext(self: *ChildIterator, node: anytype, max: u9, loopBody: fn (self: *ChildIterator, parent: anytype) bool) ?*Node {
+                fn yieldNext(self: *ChildIterator, node: anytype, max: u9, loopBody: fn (*ChildIterator, anytype) bool) ?*Node {
                     if (self.i == max) return null;
                     defer self.i += 1;
                     while (true) : (self.i += 1) {
@@ -465,8 +465,8 @@ pub fn Art(comptime T: type) type {
                 },
                 .node16 => {
                     var cmp = @splat(16, c) == @as(@Vector(16, u8), n.node16.keys.*);
-                    const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
-                    const bitfield = @ptrCast(*u17, &cmp).* & mask;
+                    const mask = @truncate(u16, (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1);
+                    const bitfield = @ptrCast(*u16, &cmp).* & mask;
 
                     if (bitfield != 0) return &n.node16.children[@ctz(usize, bitfield)].?;
                 },
@@ -522,8 +522,8 @@ pub fn Art(comptime T: type) type {
         fn addChild16(t: *Tree, n: *Node, ref: *?*Node, c: u8, child: anytype) Error!void {
             if (n.node16.num_children < 16) {
                 var cmp = @splat(16, c) < @as(@Vector(16, u8), n.node16.keys.*);
-                const mask = (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1;
-                const bitfield = @ptrCast(*u17, &cmp).* & mask;
+                const mask = @truncate(u16, (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1);
+                const bitfield = @ptrCast(*u16, &cmp).* & mask;
 
                 var idx: usize = 0;
                 if (bitfield != 0) {
