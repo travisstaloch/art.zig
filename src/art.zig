@@ -76,7 +76,7 @@ pub fn Art(comptime T: type) type {
                         .leaf => unreachable,
                     };
                 }
-                fn yieldNext(self: *ChildIterator, node: anytype, max: u9, loopBody: fn (*ChildIterator, anytype) bool) ?*Node {
+                fn yieldNext(self: *ChildIterator, node: anytype, max: u9, comptime loopBody: fn (*ChildIterator, anytype) ?*Node) ?*Node {
                     if (self.i == max) return null;
                     defer self.i += 1;
                     while (true) : (self.i += 1) {
@@ -286,8 +286,8 @@ pub fn Art(comptime T: type) type {
             };
 
             // allocate enough space for a Node + [num_keys]u8 + [num_children]*Node
-            var bytes = try t.allocator.alignedAlloc(u8, @alignOf(*Node), @sizeOf(Node) +
-                1 * NodeT.num_keys + @sizeOf(*Node) * NodeT.num_children);
+            var bytes = try t.allocator.alignedAlloc(u8, @alignOf(Node), @sizeOf(Node) +
+                NodeT.num_keys + @sizeOf(*Node) * NodeT.num_children);
             const n = mem.bytesAsValue(Node, bytes[0..@sizeOf(Node)]);
             bytes = bytes[@sizeOf(Node)..];
 
@@ -310,7 +310,7 @@ pub fn Art(comptime T: type) type {
             var node = &@field(n, tag_name);
             node.keys.* = [1]u8{0} ** NodeT.num_keys;
             node.children.* = [1]?*Node{null} ** NodeT.num_children;
-            return n;
+            return @ptrCast(*align(@alignOf(Node)) Node, n);
         }
 
         fn recursiveInsert(t: *Tree, _n: ?*Node, ref: *?*Node, key: []const u8, value: T, depth: u32) Error!Result {
