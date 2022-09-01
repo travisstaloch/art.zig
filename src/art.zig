@@ -468,7 +468,7 @@ pub fn Art(comptime T: type) type {
                     const mask = @truncate(u16, (@as(u17, 1) << @truncate(u5, n.node16.num_children)) - 1);
                     const bitfield = @ptrCast(*u16, &cmp).* & mask;
 
-                    if (bitfield != 0) return &n.node16.children[@ctz(usize, bitfield)].?;
+                    if (bitfield != 0) return &n.node16.children[@ctz(bitfield)].?;
                 },
                 .node48 => {
                     const i = n.node48.keys[c];
@@ -527,7 +527,7 @@ pub fn Art(comptime T: type) type {
 
                 var idx: usize = 0;
                 if (bitfield != 0) {
-                    idx = @ctz(usize, bitfield);
+                    idx = @ctz(bitfield);
                     const shift_len = n.node16.num_children - idx;
                     mem.copyBackwards(u8, n.node16.keys[idx + 1 ..], n.node16.keys[idx..][0..shift_len]);
                     mem.copyBackwards(?*Node, n.node16.children[idx + 1 ..], n.node16.children[idx..][0..shift_len]);
