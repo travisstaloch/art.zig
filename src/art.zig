@@ -573,9 +573,7 @@ pub fn Art(comptime T: type) type {
             }
         }
 
-        fn addChild256(t: *Tree, _n: ?*Node, _: *?*Node, c: u8, child: anytype) Error!void {
-            _ = child;
-            _ = t;
+        fn addChild256(_: *Tree, _n: ?*Node, _: *?*Node, c: u8, child: anytype) Error!void {
             const n = _n orelse return error.Missing;
             n.node256.children[c] = child;
             // prevent overflow with saturating addition
