@@ -1,6 +1,6 @@
 # Features
 
-This library provides a zig implementation of the Adaptive Radix Tree or ART. The ART operates similar to a traditional radix tree but avoids the wasted space of internal nodes by changing the node size. It makes use of 4 node sizes (4, 16, 48, 256), and can guarantee that the overhead is no more than 52 bytes per key, though in practice it is much lower.
+This library provides a zig implementation of the Adaptive Radix Tree or ART. The ART operates similar to a traditional radix tree but avoids the wasted space of internal nodes by changing the node size. It makes use of 4 node sizes (8, 16, 48, 256), and can guarantee that the overhead is no more than 52 bytes per key, though in practice it is much lower.
 As a radix tree, it provides the following:
 
   -  O(k) operations. In many cases, this can be faster than a hash table since the hash function is an O(k) operation, and hash tables have very poor cache locality.
@@ -19,23 +19,48 @@ NOTES:
 See [src/test_art.zig](src/test_art.zig)
 
 ### **Important Notes**
-This library accepts zig string slices (`[:0]const u8`) which means they are required to be null terminated. 
+This library requires null terminated string slices (`[:0]const u8`).
 
-Developed against zig version 0.11.0-dev.3834+d98147414.
+Developed and tested against zig's latest master version. The zig version when this readme was updated was `0.11.0-dev.3834+d98147414`.
 
-### Build
-```sh
-# creates zig-cache/lib/libart.a
-# debug
-$ zig build 
+### Use with the zig package manager
+```zig
+// build.zig.zon
+.{
+    .name = "my lib",
+    .version = "0.0.1",
 
-# release
-$ zig build -Drelease-safe # or release-fast or release-small
+    .dependencies = .{
+        .art = .{
+            .url = "https://github.com/travisstaloch/art.zig/archive/e8866a9f5b29a5b40db215e2242a8e265ccf300c.tar.gz",
+            .hash = "1220d4b11d054408f1026fcdb026ef44939120e9a11a1ca2963a1c66e5adf3639ab6",
+        },
+    }
+}
+```
+
+```zig
+// build.zig
+const art_dep = b.dependency("art", .{});
+const art_mod = art_dep.module("art");
+exe.addModule("art", art_mod);
+```
+
+```zig
+// example zig app
+const art = @import("art");
+
+pub fn main() !void {
+    const A = art.Art(usize);
+    var a = A.init(&std.heap.page_allocator);
+    _ = try a.insert("foo", 0);
+}
+
 ```
 
 ### Test
 ```sh
-$ zig build test
+$ zig build test -Doptimize=ReleaseSafe
 ```
 
 ### Run repl
@@ -54,6 +79,10 @@ The repl is very simple and responds to these commands:
 A representation of the tree will be printed after each operation.
 
 # Benchmarks
+```sh
+zig build bench
+```
+
 This simple benchark consists of inserting, searching for and deleting each line from testdata/words.txt (235886 lines).  Benchmarks are compiled with --release-fast. 
 
 ### vs StringHashMap 
