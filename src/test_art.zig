@@ -1,23 +1,22 @@
 const std = @import("std");
 const mem = std.mem;
-const art = @import("art.zig");
+const art = @import("art");
 const Art = art.Art;
 
-const tal = &std.testing.allocator;
-const warn = std.log.warn;
+const tal = std.testing.allocator;
 
 // set to test against many value types (increases test run time)
 const test_all_ValueTypes = false;
 const ValueTypes = if (test_all_ValueTypes) [_]type{ u8, u16, u32, u64, usize, f32, f64, bool, [24]u8, [3]usize } else [_]type{usize};
 fn valAsType(comptime T: type, i: usize) T {
     return switch (@typeInfo(T)) {
-        .Int => @truncate(T, i),
+        .Int => @truncate(i),
         .Bool => i != 0,
-        .Float => @intToFloat(T, i),
-        .Array => |ti| blk: {
+        .Float => @floatFromInt(i),
+        .Array => blk: {
             var v: T = undefined;
             for (v) |*it| {
-                it.* = @truncate(ti.child, i);
+                it.* = @truncate(i);
             }
             break :blk v;
         },
@@ -27,21 +26,21 @@ fn valAsType(comptime T: type, i: usize) T {
 
 test "basic" {
     inline for (ValueTypes) |T| {
-        var t = Art(T).init(tal);
+        var t = Art(T).init(&tal);
         defer t.deinit();
         const words = [_][:0]const u8{
             "Aaron",
             "Aaronic",
             "Aaronical",
         };
-        for (words) |w, i| {
+        for (words, 0..) |w, i| {
             _ = try t.insert(w, valAsType(T, i));
         }
     }
 }
 
 // TODO make iterator() for Art with same api as StringHashMap
-fn free_keys(container: anytype) !void {
+pub fn free_keys(container: anytype) !void {
     const T = @TypeOf(container.*);
     if (T == std.StringHashMap(usize)) {
         var it = container.iterator();
@@ -69,7 +68,7 @@ const doInsert = struct {
 
 test "insert many keys" {
     inline for (ValueTypes) |T| {
-        var t = Art(T).init(tal);
+        var t = Art(T).init(&tal);
         defer {
             free_keys(&t) catch unreachable;
             t.deinit();
@@ -80,7 +79,7 @@ test "insert many keys" {
     }
 }
 
-fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, container: anytype, data: anytype, comptime T: type) anyerror!void, filename: []const u8, container: anytype, data: anytype, comptime T: type) !usize {
+pub fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, container: anytype, data: anytype, comptime T: type) anyerror!void, filename: []const u8, container: anytype, data: anytype, comptime T: type) !usize {
     const f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
     defer f.close();
 
@@ -97,7 +96,7 @@ fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, container: an
 
 test "insert delete many" {
     inline for (ValueTypes) |T| {
-        var t = Art(T).init(tal);
+        var t = Art(T).init(&tal);
         defer t.deinit();
         const filename = "./testdata/words.txt";
 
@@ -116,12 +115,12 @@ test "insert delete many" {
         _ = try fileEachLine(doDelete, filename, &t, lines, T);
 
         try testing.expectEqual(t.size, 0);
-        try free_keys(&t);
+        // try free_keys(&t);
     }
 }
 const testing = std.testing;
 test "long prefix" {
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
 
     try testing.expectEqual(t.insert("this:key:has:a:long:prefix:3", 3), .missing);
@@ -147,7 +146,7 @@ test "long prefix" {
 
 test "insert search uuid" {
     inline for (ValueTypes) |T| {
-        var t = Art(T).init(tal);
+        var t = Art(T).init(&tal);
         defer t.deinit();
 
         const filename = "./testdata/uuid.txt";
@@ -201,7 +200,7 @@ fn test_prefix_cb(n: anytype, data: *prefix_data, _: usize) TestingError!bool {
 }
 
 test "iter prefix" {
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
     const s1 = "api.foo.bar";
     const s2 = "api.foo.baz";
@@ -257,7 +256,7 @@ test "iter prefix" {
 }
 
 test "insert very long key" {
-    var t = Art(void).init(tal);
+    var t = Art(void).init(&tal);
     defer t.deinit();
 
     const key1 = [_:0]u8{
@@ -315,7 +314,7 @@ test "insert very long key" {
 
 test "insert search" {
     inline for (ValueTypes) |T| {
-        var t = Art(T).init(tal);
+        var t = Art(T).init(&tal);
         defer t.deinit();
         const filename = "./testdata/words.txt";
 
@@ -349,7 +348,7 @@ fn sizeCb(n: anytype, data: *usize, _: usize) TestingError!bool {
 }
 
 test "insert search delete" {
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
     const filename = "./testdata/words.txt";
 
@@ -382,7 +381,7 @@ test "insert search delete" {
 
 const letters = [_][:0]const u8{ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 test "insert search delete 2" {
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
 
     var linei: usize = 1;
@@ -427,7 +426,7 @@ test "insert search delete 2" {
 }
 
 test "insert random delete" {
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
     const filename = "./testdata/words.txt";
 
@@ -459,7 +458,7 @@ fn iter_cb(n: anytype, out: *[2]u64, _: usize) TestingError!bool {
 }
 
 test "insert iter" {
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
     const filename = "./testdata/words.txt";
 
@@ -482,7 +481,7 @@ test "insert iter" {
 }
 
 test "max prefix len iter" {
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
 
     const key1 = "foobarbaz1-test1-foo";
@@ -516,14 +515,14 @@ test "display children" {
     for (letter_ranges) |range| {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        const allr = &arena.allocator();
-        var t = Art(usize).init(allr);
+        const allr = arena.allocator();
+        var t = Art(usize).init(&allr);
         defer t.deinit();
-        for (letters[range[0]..range[1]]) |word, i| {
+        for (letters[range[0]..range[1]], 0..) |word, i| {
             var j: u8 = 0;
             while (j < 10) : (j += 1) {
                 const nt_letter = try arena.allocator().allocSentinel(u8, word.len + j, 0);
-                mem.set(u8, nt_letter, word[0]);
+                @memset(nt_letter, word[0]);
                 try testing.expectEqual(t.insert(nt_letter, i), .missing);
             }
         }
@@ -537,7 +536,7 @@ test "display children" {
 const CustomType = struct { a: f32, b: struct { c: bool } };
 const Uab = union(enum) { a, b };
 const IterTypes = [_]type{ u8, u16, i32, bool, f32, f64, @Vector(10, u8), [10]u8, CustomType, Uab, [10]*u32, *u16, *isize };
-fn defaultFor(comptime T: type) T {
+inline fn defaultFor(comptime T: type) T {
     const ti = @typeInfo(T);
     return switch (ti) {
         .Void => {},
@@ -564,14 +563,17 @@ fn defaultFor(comptime T: type) T {
 fn cb(node: anytype, data: anytype, _: usize) TestingError!bool {
     _ = node;
     const ti = @typeInfo(@TypeOf(data));
-    if (ti != .Pointer)
+    if (ti == .Array and @typeInfo(ti.Array.child) == .Pointer) {
+        for (data) |ptr|
+            try testing.expectEqual(defaultFor(@TypeOf(data[0].*)), ptr.*);
+    } else if (ti != .Pointer)
         try testing.expectEqual(defaultFor(@TypeOf(data)), data);
     return false;
 }
 
 test "iter data types" {
     inline for (IterTypes) |T| {
-        var t = Art(usize).init(tal);
+        var t = Art(usize).init(&tal);
         defer t.deinit();
         _ = try t.insert("A", 0);
         _ = try t.iter(cb, defaultFor(T), TestingError!bool);
@@ -579,10 +581,10 @@ test "iter data types" {
 }
 
 test "print to stream" {
-    var list = std.ArrayList(u8).init(tal.*);
+    var list = std.ArrayList(u8).init(tal);
     defer list.deinit();
     var writer = &list.writer();
-    var t = Art(usize).init(tal);
+    var t = Art(usize).init(&tal);
     defer t.deinit();
     for (letters) |l| {
         _ = try t.insert(l, 0);
@@ -590,88 +592,13 @@ test "print to stream" {
     try t.printToStream(writer);
 }
 
-fn bench(container: anytype, comptime appen_fn_name: []const u8, comptime get_fn_name: []const u8, comptime del_fn_name: []const u8) !void {
-    const filename = "./testdata/words.txt";
-
-    var timer = try std.time.Timer.start();
-    const doInsert_ = struct {
-        fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
-            _ = U;
-            const append_fn = @field(_container, appen_fn_name);
-            const line_ = try _container.allocator.dupeZ(u8, line);
-            _ = try append_fn(line_, linei);
-        }
-    }.func;
-    _ = try fileEachLine(doInsert_, filename, container, null, usize);
-    const t1 = timer.read();
-
-    timer.reset();
-    const doSearch = struct {
-        fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
-            _ = U;
-            _ = linei;
-            const get_fn = @field(_container, get_fn_name);
-            if (@TypeOf(_container) == *Art(usize)) {
-                const result = get_fn(line);
-                try testing.expect(result == .found);
-            } else {
-                const result = get_fn(line);
-                try testing.expect(result != null);
-            }
-        }
-    }.func;
-    _ = try fileEachLine(doSearch, filename, container, null, usize);
-    const t2 = timer.read();
-
-    timer.reset();
-    const doDelete = struct {
-        fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
-            _ = U;
-            _ = linei;
-            const del_fn = @field(_container, del_fn_name);
-            // @compileLog(@TypeOf(_container));
-            if (@TypeOf(_container) == *Art(usize)) {
-                const result = try del_fn(line);
-                try testing.expect(result == .found);
-            } else {
-                const result = del_fn(line);
-                try testing.expect(result);
-            }
-        }
-    }.func;
-    _ = try fileEachLine(doDelete, filename, container, null, usize);
-    const t3 = timer.read();
-
-    warn("insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });
-    try free_keys(container);
-}
-
-test "bench against StringHashMap" {
-    {
-        var arena = std.heap.ArenaAllocator.init(tal.*);
-        var aa = &arena.allocator();
-        var map = std.StringHashMap(usize).init(aa.*);
-        defer arena.deinit();
-        warn("\nStringHashMap\n", .{});
-        try bench(&map, "put", "get", "remove");
-    }
-    {
-        var arena = std.heap.ArenaAllocator.init(tal.*);
-        var aa = &arena.allocator();
-        var t = Art(usize).init(aa);
-        defer arena.deinit();
-        warn("\nArt\n", .{});
-        try bench(&t, "insert", "search", "delete");
-    }
-}
-
 test "fuzz" {
-    var t = Art(u8).init(tal);
+    var t = Art(u8).init(&tal);
     defer t.deinit();
     // generate random keys and values
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    var rnd = std.rand.DefaultPrng.init(@intCast(u64, std.time.nanoTimestamp()));
+    var rnd = std.rand.DefaultPrng.init(@intCast(std.time.nanoTimestamp()));
     var found = std.StringHashMap(void).init(arena.allocator());
 
     const num_keys = 100000;
@@ -694,11 +621,11 @@ test "fuzz" {
         if (result != .found and already_deleted) {
             std.log.err("result != .found, already_deleted?: {}, key.len: {} key: '{s}' tree.size: {}", .{ already_deleted, key.len, key, t.size });
         } else {
-            try found.put(key, .{});
+            try found.put(key, {});
         }
         if (prev_found == null) {
             try testing.expect(result == .found);
-            try testing.expectEqual(result.found.value, @truncate(u8, key.len));
+            try testing.expectEqual(result.found.value, @as(u8, @truncate(key.len)));
         }
         _ = try t.delete(key);
     }

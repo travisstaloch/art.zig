@@ -23,4 +23,5 @@ jobs:
       with:
         version: master
 
-    - run: zig build test
+    - run: zig build test -Doptimize=ReleaseSafe
+    - run: zig build bench

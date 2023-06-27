@@ -21,6 +21,8 @@ See [src/test_art.zig](src/test_art.zig)
 ### **Important Notes**
 This library accepts zig string slices (`[:0]const u8`) which means they are required to be null terminated. 
 
+Developed against zig version 0.11.0-dev.3834+d98147414.
+
 ### Build
 ```sh
 # creates zig-cache/lib/libart.a

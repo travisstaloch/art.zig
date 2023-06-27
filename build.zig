@@ -2,20 +2,44 @@ const std = @import("std");
 const Builder = std.build.Builder;
 
 pub fn build(b: *Builder) void {
-    const mode = b.standardReleaseOptions();
-    const lib = b.addStaticLibrary("art", "src/art.zig");
-    lib.setBuildMode(mode);
-    lib.linkLibC();
-    lib.install();
-    lib.use_stage1 = true;
+    const mod = b.addModule("art", .{
+        .source_file = .{ .path = "src/art.zig" },
+    });
 
-    var main_tests = b.addTest("src/test_art.zig");
-    main_tests.setBuildMode(mode);
-    // main_tests.filter = "display children";
-    main_tests.setBuildMode(std.builtin.Mode.ReleaseSafe);
-    main_tests.linkLibC();
-    main_tests.use_stage1 = true;
+    const optimize = b.standardOptimizeOption(.{});
+    const target = b.standardTargetOptions(.{});
+    const exe = b.addExecutable(.{
+        .name = "art",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .optimize = optimize,
+        .target = target,
+    });
+    exe.linkLibC();
+    exe.addModule("art", mod);
+    const install = b.addInstallArtifact(exe);
+    b.getInstallStep().dependOn(&install.step);
 
+    var tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/test_art.zig" },
+        .optimize = optimize,
+        .target = target,
+    });
+    tests.linkLibC();
+    tests.addModule("art", mod);
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&main_tests.step);
+    const main_tests_run = b.addRunArtifact(tests);
+    main_tests_run.has_side_effects = true;
+    test_step.dependOn(&main_tests_run.step);
+
+    const bench = b.addExecutable(.{
+        .name = "bench",
+        .root_source_file = .{ .path = "src/bench2.zig" },
+        .optimize = .ReleaseFast,
+        .target = target,
+    });
+    bench.linkLibC();
+    bench.addModule("art", mod);
+    const bench_run = b.addRunArtifact(bench);
+    const bench_step = b.step("bench", "Bench against std.StringHashMap()");
+    bench_step.dependOn(&bench_run.step);
 }
