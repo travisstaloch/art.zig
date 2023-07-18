@@ -1,6 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 const math = std.math;
+const u8x16 = @Vector(16, u8);
 
 pub const Error = error{ OutOfMemory, NoMinimum, Missing };
 
@@ -340,7 +341,7 @@ pub fn Art(comptime T: type) type {
                 @memcpy(new_node.node8.partial[0..len], key[depth..][0..len]);
                 ref.* = new_node;
                 try t.addChild8(new_node, ref, l.key[depth + longest_prefix], n);
-                try t.addChild8(new_node, ref, l2.*.leaf.key[depth + longest_prefix], l2);
+                try t.addChild8(new_node, ref, l2.leaf.key[depth + longest_prefix], l2);
                 return .missing;
             }
             var base = n.baseNode();
@@ -474,7 +475,7 @@ pub fn Art(comptime T: type) type {
                     }
                 },
                 .node16 => {
-                    var cmp = @splat(16, c) == @as(@Vector(16, u8), n.node16.keys.*);
+                    var cmp = @as(u8x16, @splat(c)) == @as(u8x16, n.node16.keys.*);
                     const mask: u16 = @truncate((@as(u17, 1) << @truncate(n.node16.num_children)) - 1);
                     const bitfield = @as(*u16, @ptrCast(&cmp)).* & mask;
 
@@ -531,7 +532,7 @@ pub fn Art(comptime T: type) type {
         }
         fn addChild16(t: *Tree, n: *Node, ref: *?*Node, c: u8, child: anytype) Error!void {
             if (n.node16.num_children < 16) {
-                var cmp = @splat(16, c) < @as(@Vector(16, u8), n.node16.keys.*);
+                var cmp = @as(u8x16, @splat(c)) < @as(u8x16, n.node16.keys.*);
                 const mask: u16 = @truncate((@as(u17, 1) << @truncate(n.node16.num_children)) - 1);
                 const bitfield = @as(*u16, @ptrCast(&cmp)).* & mask;
 
