@@ -16,7 +16,7 @@ pub fn build(b: *Builder) void {
     });
     exe.linkLibC();
     exe.addModule("art", mod);
-    const install = b.addInstallArtifact(exe);
+    const install = b.addInstallArtifact(exe, .{});
     b.getInstallStep().dependOn(&install.step);
 
     var tests = b.addTest(.{
