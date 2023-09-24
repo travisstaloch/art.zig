@@ -5,10 +5,19 @@ const art_test = @import("test_art.zig");
 
 const bench_log = if (std.debug.runtime_safety) std.debug.print else std.log.info;
 
-fn bench(container: anytype, comptime appen_fn: anytype, comptime get_fn: anytype, comptime del_fn: anytype) !void {
+fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, comptime get_fn: anytype, comptime del_fn: anytype) !void {
     const filename = "./testdata/words.txt";
+    var lines = std.ArrayList([:0]const u8).init(a);
 
-    var timer = try std.time.Timer.start();
+    {
+        const f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
+        defer f.close();
+        const reader = &f.reader();
+        while (try reader.readUntilDelimiterOrEofAlloc(a, '\n', 512)) |line| {
+            try lines.append(try a.dupeZ(u8, line));
+        }
+    }
+
     const doInsert_ = struct {
         fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
             _ = U;
@@ -16,10 +25,12 @@ fn bench(container: anytype, comptime appen_fn: anytype, comptime get_fn: anytyp
             _ = try appen_fn(_container, line_, linei);
         }
     }.func;
-    _ = try art_test.fileEachLine(doInsert_, filename, container, null, usize);
+    var timer = try std.time.Timer.start();
+    for (0.., lines.items) |i, line| {
+        try doInsert_(line, i, container, null, usize);
+    }
     const t1 = timer.read();
 
-    timer.reset();
     const doSearch = struct {
         fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
             _ = U;
@@ -33,10 +44,13 @@ fn bench(container: anytype, comptime appen_fn: anytype, comptime get_fn: anytyp
             }
         }
     }.func;
-    _ = try art_test.fileEachLine(doSearch, filename, container, null, usize);
-    const t2 = timer.read();
 
     timer.reset();
+    for (0.., lines.items) |i, line| {
+        try doSearch(line, i, container, null, usize);
+    }
+    const t2 = timer.read();
+
     const doDelete = struct {
         fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
             _ = U;
@@ -50,7 +64,10 @@ fn bench(container: anytype, comptime appen_fn: anytype, comptime get_fn: anytyp
             }
         }
     }.func;
-    _ = try art_test.fileEachLine(doDelete, filename, container, null, usize);
+    timer.reset();
+    for (0.., lines.items) |i, line| {
+        try doDelete(line, i, container, null, usize);
+    }
     const t3 = timer.read();
 
     std.debug.print("insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });
@@ -68,7 +85,7 @@ pub fn main() !void {
 
         defer arena.deinit();
         std.debug.print("\nStringHashMap\n", .{});
-        try bench(&map, Map.put, Map.get, Map.remove);
+        try bench(aa, &map, Map.put, Map.get, Map.remove);
     }
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
@@ -77,6 +94,6 @@ pub fn main() !void {
         var t = T.init(&aa);
         defer arena.deinit();
         std.debug.print("\nArt\n", .{});
-        try bench(&t, T.insert, T.search, T.delete);
+        try bench(aa, &t, T.insert, T.search, T.delete);
     }
 }
