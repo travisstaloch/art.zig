@@ -14,15 +14,14 @@ fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, c
         defer f.close();
         const reader = &f.reader();
         while (try reader.readUntilDelimiterOrEofAlloc(a, '\n', 512)) |line| {
-            try lines.append(try a.dupeZ(u8, line));
+            try lines.append(line);
         }
     }
 
     const doInsert_ = struct {
         fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
             _ = U;
-            const line_ = try _container.allocator.dupeZ(u8, line);
-            _ = try appen_fn(_container, line_, linei);
+            _ = try appen_fn(_container, line, linei);
         }
     }.func;
     var timer = try std.time.Timer.start();
