@@ -8,13 +8,20 @@ const bench_log = if (std.debug.runtime_safety) std.debug.print else std.log.inf
 fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, comptime get_fn: anytype, comptime del_fn: anytype) !void {
     const filename = "./testdata/words.txt";
     var lines = std.ArrayList([:0]const u8).init(a);
+    defer lines.deinit();
+    defer {
+        for (lines.items) |line| {
+            a.free(line);
+        }
+    }
 
     {
         const f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
         defer f.close();
         const reader = &f.reader();
         while (try reader.readUntilDelimiterOrEofAlloc(a, '\n', 512)) |line| {
-            try lines.append(line);
+            defer a.free(line);
+            try lines.append(try a.dupeZ(u8, line));
         }
     }
 
@@ -75,24 +82,26 @@ fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, c
 
 /// bench against StringHashMap
 pub fn main() !void {
-    const allocator = std.heap.c_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
         const aa = arena.allocator();
         const Map = std.StringHashMap(usize);
         var map = Map.init(aa);
-
-        defer arena.deinit();
         std.debug.print("\nStringHashMap\n", .{});
-        try bench(aa, &map, Map.put, Map.get, Map.remove);
+        try bench(allocator, &map, Map.put, Map.get, Map.remove);
     }
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
         const aa = arena.allocator();
         const T = Art(usize);
         var t = T.init(&aa);
-        defer arena.deinit();
+        defer t.deinit();
         std.debug.print("\nArt\n", .{});
-        try bench(aa, &t, T.insert, T.search, T.delete);
+        try bench(allocator, &t, T.insert, T.search, T.delete);
     }
 }
