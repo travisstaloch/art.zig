@@ -60,35 +60,62 @@ pub fn free_keys(container: anytype) !void {
 
 const doInsert = struct {
     fn func(line: [:0]const u8, linei: usize, container: anytype, _: anytype, comptime T: type) anyerror!void {
-        const line_ = try container.allocator.dupeZ(u8, line);
-        const result = try container.insert(line_, valAsType(T, linei));
+        const result = try container.insert(line, valAsType(T, linei));
         try testing.expect(result == .missing);
     }
 }.func;
 
 test "insert many keys" {
+    const lines = try readFileLines(tal, "./testdata/words.txt");
+    defer lines.deinit();
     inline for (ValueTypes) |T| {
         var t = Art(T).init(&tal);
         defer {
             free_keys(&t) catch unreachable;
             t.deinit();
         }
-        const filename = "./testdata/words.txt";
-        const lines = try fileEachLine(doInsert, filename, &t, null, T);
-        try testing.expectEqual(t.size, lines);
+        const _lines = try eachLineDo(doInsert, lines, &t, null, T);
+        try testing.expectEqual(t.size, _lines);
     }
 }
 
-pub fn fileEachLine(comptime do: fn (line: [:0]const u8, linei: usize, container: anytype, data: anytype, comptime T: type) anyerror!void, filename: []const u8, container: anytype, data: anytype, comptime T: type) !usize {
+pub fn readFileLines(allocator: mem.Allocator, filename: []const u8) !std.ArrayList([:0]const u8) {
+    var lines = std.ArrayList([:0]const u8).init(allocator);
     const f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
     defer f.close();
-
-    var linei: usize = 1;
-    const reader = &f.reader();
-    var buf: [512:0]u8 = undefined;
+    const reader = f.reader();
+    var buf: [512]u8 = undefined;
     while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        buf[line.len] = 0;
-        try do(buf[0..line.len :0], linei, container, data, T);
+        try lines.append(try allocator.dupeZ(u8, line));
+    }
+    return lines;
+}
+
+pub fn deinitLines(allocator: mem.Allocator, lines: *std.ArrayList([:0]const u8)) void {
+    {
+        for (lines.items) |line| {
+            allocator.free(line);
+        }
+    }
+    lines.deinit();
+}
+
+pub fn eachLineDo(
+    do: *const fn (
+        line: [:0]const u8,
+        linei: usize,
+        container: anytype,
+        data: anytype,
+        comptime T: type,
+    ) anyerror!void,
+    lines: std.ArrayList([:0]const u8),
+    container: anytype,
+    data: anytype,
+    comptime T: type,
+) !usize {
+    var linei: usize = 1;
+    for (lines.items) |line| {
+        try do(line, linei, container, data, T);
         linei += 1;
     }
     return linei - 1;
@@ -98,9 +125,9 @@ test "insert delete many" {
     inline for (ValueTypes) |T| {
         var t = Art(T).init(&tal);
         defer t.deinit();
-        const filename = "./testdata/words.txt";
-
-        const lines = try fileEachLine(doInsert, filename, &t, null, T);
+        const lines = try readFileLines(tal, "./testdata/words.txt");
+        defer lines.deinit();
+        const _lines = try eachLineDo(doInsert, lines, &t, null, T);
 
         const doDelete = struct {
             fn func(line: [:0]const u8, linei: usize, _t: anytype, data: anytype, comptime _: type) anyerror!void {
@@ -112,7 +139,7 @@ test "insert delete many" {
                 try testing.expectEqual(_t.size, nlines - linei);
             }
         }.func;
-        _ = try fileEachLine(doDelete, filename, &t, lines, T);
+        _ = try eachLineDo(doDelete, lines, &t, _lines, T);
 
         try testing.expectEqual(t.size, 0);
         // try free_keys(&t);
@@ -149,9 +176,9 @@ test "insert search uuid" {
         var t = Art(T).init(&tal);
         defer t.deinit();
 
-        const filename = "./testdata/uuid.txt";
-
-        _ = try fileEachLine(doInsert, filename, &t, null, T);
+        const lines = try readFileLines(tal, "./testdata/uuid.txt");
+        defer lines.deinit();
+        _ = try eachLineDo(doInsert, lines, &t, null, T);
 
         const doSearch = struct {
             fn func(line: [:0]const u8, linei: usize, _t: anytype, data: anytype, comptime _: type) anyerror!void {
@@ -164,7 +191,7 @@ test "insert search uuid" {
                 try testing.expectEqual(result.found.value, valAsType(T, linei));
             }
         }.func;
-        _ = try fileEachLine(doSearch, filename, &t, null, T);
+        _ = try eachLineDo(doSearch, lines, &t, null, T);
 
         var l = Art(T).minimum(t.root);
         try testing.expect(l != null);
@@ -316,9 +343,9 @@ test "insert search" {
     inline for (ValueTypes) |T| {
         var t = Art(T).init(&tal);
         defer t.deinit();
-        const filename = "./testdata/words.txt";
-
-        _ = try fileEachLine(doInsert, filename, &t, null, T);
+        const lines = try readFileLines(tal, "./testdata/words.txt");
+        defer lines.deinit();
+        _ = try eachLineDo(doInsert, lines, &t, null, T);
 
         const doSearch = struct {
             fn func(line: [:0]const u8, linei: usize, _t: anytype, data: anytype, comptime _: type) anyerror!void {
@@ -328,7 +355,7 @@ test "insert search" {
                 try testing.expectEqual(result.found.value, valAsType(T, linei));
             }
         }.func;
-        _ = try fileEachLine(doSearch, filename, &t, null, T);
+        _ = try eachLineDo(doSearch, lines, &t, null, T);
 
         var l = Art(T).minimum(t.root);
         try testing.expectEqualSlices(u8, l.?.key, "A\x00");
@@ -350,9 +377,9 @@ fn sizeCb(n: anytype, data: *usize, _: usize) TestingError!bool {
 test "insert search delete" {
     var t = Art(usize).init(&tal);
     defer t.deinit();
-    const filename = "./testdata/words.txt";
-
-    const lines = try fileEachLine(doInsert, filename, &t, null, usize);
+    const lines = try readFileLines(tal, "./testdata/words.txt");
+    defer lines.deinit();
+    const _lines = try eachLineDo(doInsert, lines, &t, null, usize);
 
     const doSearchDelete = struct {
         fn func(line: [:0]const u8, linei: usize, _t: anytype, data: anytype, comptime _: type) anyerror!void {
@@ -369,7 +396,7 @@ test "insert search delete" {
             try testing.expectEqual(expected_size, _t.size);
         }
     }.func;
-    _ = try fileEachLine(doSearchDelete, filename, &t, lines, usize);
+    _ = try eachLineDo(doSearchDelete, lines, &t, _lines, usize);
 
     var l = Art(usize).minimum(t.root);
     try testing.expectEqual(l, null);
@@ -428,9 +455,9 @@ test "insert search delete 2" {
 test "insert random delete" {
     var t = Art(usize).init(&tal);
     defer t.deinit();
-    const filename = "./testdata/words.txt";
-
-    _ = try fileEachLine(doInsert, filename, &t, null, usize);
+    const lines = try readFileLines(tal, "./testdata/words.txt");
+    defer lines.deinit();
+    _ = try eachLineDo(doInsert, lines, &t, null, usize);
 
     const key_to_delete = "A";
     const lineno = 1;
@@ -460,18 +487,18 @@ fn iter_cb(n: anytype, out: *[2]u64, _: usize) TestingError!bool {
 test "insert iter" {
     var t = Art(usize).init(&tal);
     defer t.deinit();
-    const filename = "./testdata/words.txt";
+    const lines = try readFileLines(tal, "./testdata/words.txt");
+    defer lines.deinit();
 
     var xor_mask: u64 = 0;
     const doInsert_ = struct {
         fn func(line: [:0]const u8, linei: usize, _t: anytype, _xor_mask: anytype, comptime _: type) anyerror!void {
-            const line_ = try _t.allocator.dupeZ(u8, line);
-            const result = try _t.insert(line_, linei);
+            const result = try _t.insert(line, linei);
             try testing.expect(result == .missing);
             _xor_mask.* ^= (linei * (line[0] + line.len));
         }
     }.func;
-    const nlines = try fileEachLine(doInsert_, filename, &t, &xor_mask, usize);
+    const nlines = try eachLineDo(doInsert_, lines, &t, &xor_mask, usize);
 
     var out = [1]u64{0} ** 2;
     _ = try t.iter(iter_cb, &out, TestingError!bool);

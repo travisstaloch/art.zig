@@ -6,24 +6,8 @@ const art_test = @import("test_art.zig");
 const bench_log = if (std.debug.runtime_safety) std.debug.print else std.log.info;
 
 fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, comptime get_fn: anytype, comptime del_fn: anytype) !void {
-    const filename = "./testdata/words.txt";
-    var lines = std.ArrayList([:0]const u8).init(a);
-    defer lines.deinit();
-    defer {
-        for (lines.items) |line| {
-            a.free(line);
-        }
-    }
-
-    {
-        const f = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
-        defer f.close();
-        const reader = &f.reader();
-        while (try reader.readUntilDelimiterOrEofAlloc(a, '\n', 512)) |line| {
-            defer a.free(line);
-            try lines.append(try a.dupeZ(u8, line));
-        }
-    }
+    var lines = try art_test.readFileLines(a, "./testdata/words.txt");
+    defer art_test.deinitLines(a, &lines);
 
     const doInsert_ = struct {
         fn func(line: [:0]const u8, linei: usize, _container: anytype, _: anytype, comptime U: type) anyerror!void {
@@ -32,9 +16,7 @@ fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, c
         }
     }.func;
     var timer = try std.time.Timer.start();
-    for (0.., lines.items) |i, line| {
-        try doInsert_(line, i, container, null, usize);
-    }
+    _ = try art_test.eachLineDo(doInsert_, lines, container, null, usize);
     const t1 = timer.read();
 
     const doSearch = struct {
@@ -52,9 +34,7 @@ fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, c
     }.func;
 
     timer.reset();
-    for (0.., lines.items) |i, line| {
-        try doSearch(line, i, container, null, usize);
-    }
+    _ = try art_test.eachLineDo(doSearch, lines, container, null, usize);
     const t2 = timer.read();
 
     const doDelete = struct {
@@ -70,10 +50,9 @@ fn bench(a: std.mem.Allocator, container: anytype, comptime appen_fn: anytype, c
             }
         }
     }.func;
+
     timer.reset();
-    for (0.., lines.items) |i, line| {
-        try doDelete(line, i, container, null, usize);
-    }
+    _ = try art_test.eachLineDo(doDelete, lines, container, null, usize);
     const t3 = timer.read();
 
     std.debug.print("insert {}ms, search {}ms, delete {}ms, combined {}ms\n", .{ t1 / 1000000, t2 / 1000000, t3 / 1000000, (t1 + t2 + t3) / 1000000 });

@@ -26,6 +26,7 @@ pub fn build(b: *Builder) void {
     });
     tests.linkLibC();
     tests.addModule("art", mod);
+    tests.filter = b.option([]const u8, "test-filter", "test filter");
     const test_step = b.step("test", "Run library tests");
     const main_tests_run = b.addRunArtifact(tests);
     main_tests_run.has_side_effects = true;
