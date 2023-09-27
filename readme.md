@@ -1,3 +1,8 @@
+# Archived
+NOTICE - I don't see the value in maintaining this any more as it has become a burden and I don't see any value when there is armon/libart which is more robust and proven.  Also zig's std.StringHashMap() out-performs this implementation by around 2x in the benchmarks below.  
+
+If anyone sees value in this project, can convince me of it and wishes to maintain it, please open an issue and I'll be glad to un-archive and add you as a maintainer.  
+
 # Features
 
 This library provides a zig implementation of the Adaptive Radix Tree or ART. The ART operates similar to a traditional radix tree but avoids the wasted space of internal nodes by changing the node size. It makes use of 4 node sizes (8, 16, 48, 256), and can guarantee that the overhead is no more than 52 bytes per key, though in practice it is much lower.
@@ -90,18 +95,17 @@ This simple benchark consists of inserting, searching for and deleting each line
 
 The results of the benchark on my machine:
 ```
-Art           insert 507ms, search 481ms, delete 495ms, combined 1484ms
-StringHashMap insert 487ms, search 482ms, delete 485ms, combined 1456ms
+.../zig/art.zig $ zig build bench
+StringHashMap
+insert 15ms, search 4ms, delete 2ms, combined 22ms
+Art
+insert 21ms, search 10ms, delete 13ms, combined 45ms
 ```
 
-| Operation| % difference |
-| --- | --- | 
-|insert|04.1% slower|
-|search|00.2% faster|
-|delete|02.0% slower|
-|combined|01.9% slower|
-
 ### vs armon/libart
+WARNING - this benchmark is old and flawed.  Most of its time is spent reading
+lines from files which hides the performance of radix trees.   Thanks to @iacore for helping me realize this.  
+
 Can be found [src/clibart.zig](src/clibart.zig#L139)
 ```
 art.zig insert 505ms, search 482ms, delete 494ms, combined 1481ms
